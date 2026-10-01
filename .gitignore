@@ -1,0 +1,29 @@
+# 构建
+*.o
+*.exe
+*.out
+a.out
+tracker
+client
+*.obj
+*.pdb
+*.ilk
+
+# 本局成品（生成器输出）
+session_*/
+*.bin
+
+# 大体量实验材料
+captures/*.pcap
+captures/*.pcapng
+captures/*.log
+captures/*.zip
+captures/*.mp4
+!captures/README.md
+
+# 系统
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
