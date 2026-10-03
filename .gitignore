@@ -3,8 +3,9 @@
 *.exe
 *.out
 a.out
-tracker
-client
+# 仓库根上的可执行文件名（必须带 /，否则会忽略 src/tracker/）
+/tracker
+/client
 *.obj
 *.pdb
 *.ilk
