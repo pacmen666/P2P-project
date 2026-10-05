@@ -28,3 +28,13 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
+
+# Python 原型产物（tests/py_test）
+__pycache__/
+*.py[cod]
+tests/py_test/demo_out/
+tests/py_test/*.log
+tests/py_test/*.err
+
+# 素材压缩工具的导出目录（零件本身在 parts_export/，需提交）
+tests/py_test/parts/
