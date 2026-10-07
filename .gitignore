@@ -6,6 +6,10 @@ a.out
 # 仓库根上的可执行文件名（必须带 /，否则会忽略 src/tracker/）
 /tracker
 /client
+/room_server
+/relay_server
+/test_client
+logs/
 *.obj
 *.pdb
 *.ilk
