@@ -217,7 +217,7 @@ static void handle_heartbeat(int fd, uint16_t req_id)
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (g_clients[i].used && g_clients[i].fd == fd) {
             g_clients[i].last_heartbeat = time(NULL);
-            log_info("收到 HEARTBEAT：peer_id=%u", g_clients[i].peer_id);
+            /* 心跳过密，不打 INFO，避免刷屏；超时仍有日志 */
             break;
         }
     }
@@ -226,12 +226,12 @@ static void handle_heartbeat(int fd, uint16_t req_id)
 
 /* ---------- 处理 PROBE ---------- */
 
-static void handle_probe(int fd, uint16_t req_id,
+static void handle_probe(int udp_fd, uint16_t req_id,
                          const uint8_t *body, uint16_t body_len,
                          struct sockaddr_in *src)
 {
-    (void)fd;
-    if (body_len < 3) return;
+    (void)req_id;
+    if (body_len < 3 || udp_fd < 0) return;
 
     uint8_t peer_id = body[2];
     uint32_t ip     = src->sin_addr.s_addr;
@@ -247,6 +247,24 @@ static void handle_probe(int fd, uint16_t req_id,
             break;
         }
     }
+
+    /* PROBE_ACK：4 字节反射 IP + 2 字节反射端口（网络序） */
+    uint8_t ack_body[6];
+    memcpy(ack_body, &ip, 4);
+    uint16_t p_n = htons(port);
+    memcpy(ack_body + 4, &p_n, 2);
+
+    struct v1_header h;
+    h.magic    = htons(V1_MAGIC);
+    h.ver      = V1_VERSION;
+    h.cmd      = CMD_PROBE_ACK;
+    h.req_id   = htons(0);
+    h.body_len = htons(sizeof(ack_body));
+
+    uint8_t pkt[8 + 6];
+    memcpy(pkt, &h, 8);
+    memcpy(pkt + 8, ack_body, 6);
+    sendto(udp_fd, pkt, sizeof(pkt), 0, (struct sockaddr *)src, sizeof(*src));
 }
 
 /* ---------- 处理 MANIFEST ---------- */
@@ -391,7 +409,7 @@ int main(void)
 
     int udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (udp_fd < 0) { perror("udp socket"); return 1; }
-    setsockopt(udp_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    /* UDP 不要 SO_REUSEADDR：多实例同时 bind 时 PROBE 可能进错进程 */
 
     struct sockaddr_in uaddr;
     memset(&uaddr, 0, sizeof(uaddr));
@@ -470,7 +488,7 @@ int main(void)
                 if (ntohs(h->magic) == V1_MAGIC &&
                     h->ver == V1_VERSION &&
                     h->cmd == CMD_PROBE) {
-                    handle_probe(-1, ntohs(h->req_id),
+                    handle_probe(udp_fd, ntohs(h->req_id),
                                  buf + 8, ntohs(h->body_len), &src);
                 }
             }
