@@ -6,8 +6,14 @@
 #include <string.h>
 
 static FILE *g_log_fp = NULL;
+static int g_log_console = 1;
 
-/* 内部函数：把一行日志同时写到终端和文件 */
+void log_set_console(int enable)
+{
+    g_log_console = enable ? 1 : 0;
+}
+
+/* 内部函数：写文件；可选回显终端（与清屏 UI 互斥） */
 static void log_write(const char *level, const char *fmt, va_list ap)
 {
     char msg[1024];
@@ -15,14 +21,11 @@ static void log_write(const char *level, const char *fmt, va_list ap)
     time_t now;
     struct tm *tm_info;
 
-    /* 1. 把用户格式化的内容写进 msg */
     vsnprintf(msg, sizeof(msg), fmt, ap);
 
-    /* 2. 取当前时间 */
     now = time(NULL);
     tm_info = localtime(&now);
 
-    /* 3. 拼成一行：[时间] [级别] 内容 */
     snprintf(line, sizeof(line),
              "[%04d-%02d-%02d %02d:%02d:%02d] [%s] %s\n",
              tm_info->tm_year + 1900,
@@ -34,11 +37,11 @@ static void log_write(const char *level, const char *fmt, va_list ap)
              level,
              msg);
 
-    /* 4. 输出到终端 */
-    fputs(line, stdout);
-    fflush(stdout);
+    if (g_log_console) {
+        fputs(line, stdout);
+        fflush(stdout);
+    }
 
-    /* 5. 输出到文件 */
     if (g_log_fp) {
         fputs(line, g_log_fp);
         fflush(g_log_fp);
