@@ -33,7 +33,7 @@ CS374 网络编程课程项目。合作解谜为外壳，核心是 P2P 分块交
 
 ## 构建
 
-提交环境以 POSIX / Linux 实验机为准。根目录 `Makefile` 待补。Windows 开发机不要把 C 运行时 `pipe` 丢进 Winsock `select`。
+提交环境以 POSIX / Linux 实验机为准。根目录 `Makefile`：`make room_server relay_server client`。Windows 开发机不要把 C 运行时 `pipe` 丢进 Winsock `select`。刘第 1 周说明见 `docs/week1_liu.md`。
 
 ## 成员
 
