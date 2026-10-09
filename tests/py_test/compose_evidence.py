@@ -119,10 +119,13 @@ def _dump(img, path, comment):
     return data
 
 
-def make_plan(seed, parts, path=None, comment=None):
+def make_plan(seed, parts, path=None, comment=None, time_str=None):
+    """现场勘查图。time_str 由调用方给出，保证与文字里的时刻一致。"""
     prng = PRNG(seed)
     f_big, f_small = fonts()
-    hour, minute = prng.randint(20, 23), prng.randint(10, 59)
+    if time_str is None:                       # 没给就自己抽（仅原型兜底用）
+        hour, minute = prng.randint(20, 23), prng.randint(10, 59)
+        time_str = f"{hour:02d}:{minute:02d}"
     W, H = 680, 480
     img = Image.new("RGB", (W, H), (255, 255, 255))
     d = ImageDraw.Draw(img)
@@ -168,18 +171,17 @@ def make_plan(seed, parts, path=None, comment=None):
     room = ROOMS[prng.randint(0, len(ROOMS) - 1)]
     d.rectangle([14, 14, W - 14, H - 14], outline=(70, 70, 70), width=2)
     d.text((30, 26), f"现场勘查图 · {room}", font=f_big, fill=(35, 35, 35))
-    d.text((30, 58), f"案件编号：FA-{seed.hex()[:4].upper()}    "
-                     f"制图时间：{hour:02d}:{minute:02d}",
+    d.text((30, 58), f"案件编号：FA-{seed.hex()[:4].upper()}    制图时间：{time_str}",
            font=f_small, fill=(80, 80, 80))
     d.text((W - 150, H - 40), f"勘查：{OFFICERS[prng.randint(0, len(OFFICERS) - 1)]}",
            font=f_small, fill=(80, 80, 80))
     stamp(d, W - 90, H - 92, "档案专用", f_small, prng)
 
     if comment is None:   # 默认把"案发时间"写进 JPEG 注释段（答案在文件正文里，不在清单里）
-        comment = f"案发时间：{hour:02d}:{minute:02d}".encode("utf-8")
+        comment = f"案发时间：{time_str}".encode("utf-8")
     tint(img, prng)
     data = _dump(img, path, comment)
-    return data, {"time": f"{hour:02d}:{minute:02d}", "room": room}
+    return data, {"time": time_str, "room": room}
 
 
 # ---------- 图二：证物登记卡 ----------
