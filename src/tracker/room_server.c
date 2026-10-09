@@ -1,5 +1,6 @@
 #include "common.h"
 #include "log.h"
+#include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,7 +14,7 @@
 #include <arpa/inet.h>
 
 #define MAX_CLIENTS 16
-#define BUF_SIZE    2048
+#define BUF_SIZE    4096
 
 /* 一个已加入的客户端 */
 struct client {
@@ -27,26 +28,33 @@ struct client {
     uint32_t refl_ip;
     uint16_t refl_port;
     time_t   last_heartbeat;
+
+    /* TCP 读状态机 */
+    uint8_t  rxbuf[BUF_SIZE];
+    int      rxlen;
 };
 
 /* 一个还未发 JOIN_REQ 的临时连接 */
 struct temp_conn {
-    int fd;
-    int used;
+    int      fd;
+    int      used;
+
+    /* TCP 读状态机 */
+    uint8_t  rxbuf[BUF_SIZE];
+    int      rxlen;
 };
 
 static struct client    g_clients[MAX_CLIENTS];
 static struct temp_conn g_temps[MAX_CLIENTS];
 
-/* 房主固定 1，玩家从 2 开始 */
 static uint8_t g_next_peer_id = 2;
 
-/* 缓存最近一份 MANIFEST */
 static uint8_t g_manifest[4096];
 static int     g_manifest_len = 0;
 
-/* 房间号（第 1 周先固定） */
 static uint16_t g_room_id = 1;
+
+static int g_udp_fd = -1;
 
 /* ---------- 工具函数 ---------- */
 
@@ -83,24 +91,82 @@ static void send_error(int fd, uint16_t req_id, uint16_t err)
     send_header_and_body(fd, CMD_ERROR, req_id, &body, sizeof(body));
 }
 
-/* 从临时连接表移除一个 fd */
 static void temp_remove(int fd)
 {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (g_temps[i].used && g_temps[i].fd == fd) {
             g_temps[i].used = 0;
+            g_temps[i].rxlen = 0;
         }
     }
 }
 
-/* 从已加入客户端表移除一个 fd */
 static void client_remove(int fd)
 {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (g_clients[i].used && g_clients[i].fd == fd) {
             g_clients[i].used = 0;
+            g_clients[i].rxlen = 0;
         }
     }
+}
+
+/* ---------- 构造成员项 ---------- */
+
+static int write_peer_entry(uint8_t *out, const struct client *p)
+{
+    int off = 0;
+    out[off++] = p->peer_id;
+    memcpy(out + off, &p->priv_ip, 4); off += 4;
+    out[off++] = (p->tcp_port >> 8) & 0xFF;
+    out[off++] = p->tcp_port & 0xFF;
+    out[off++] = (p->udp_port >> 8) & 0xFF;
+    out[off++] = p->udp_port & 0xFF;
+    memcpy(out + off, &p->refl_ip, 4); off += 4;
+    out[off++] = (p->refl_port >> 8) & 0xFF;
+    out[off++] = p->refl_port & 0xFF;
+    uint8_t nl = strlen(p->nick);
+    out[off++] = nl;
+    memcpy(out + off, p->nick, nl); off += nl;
+    return off;
+}
+
+/* ---------- PEER_LIST 推送 ---------- */
+
+static void push_peer_list(void)
+{
+    uint8_t body[2048];
+    int off = 0;
+
+    int n_off = off++;
+    uint8_t peer_n = 0;
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (!g_clients[i].used) continue;
+        off += write_peer_entry(body + off, &g_clients[i]);
+        peer_n++;
+    }
+    body[n_off] = peer_n;
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (!g_clients[i].used) continue;
+        send_header_and_body(g_clients[i].fd, CMD_PEER_LIST, 0, body, off);
+    }
+
+    log_info("推送 PEER_LIST，共 %u 人", peer_n);
+}
+
+/* ---------- 写名单文件 ---------- */
+
+static void dump_peer_list_to_file(const char *path)
+{
+    FILE *fp = fopen(path, "w");
+    if (!fp) return;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (!g_clients[i].used) continue;
+        fprintf(fp, "%u\n", g_clients[i].peer_id);
+    }
+    fclose(fp);
 }
 
 /* ---------- 处理 JOIN_REQ ---------- */
@@ -126,12 +192,17 @@ static void handle_join_req(int fd, uint16_t req_id,
         return;
     }
 
-    /* room_id = 0 表示创建新房间，由服务分配 */
+    char nick[17];
+    memset(nick, 0, sizeof(nick));
+    memcpy(nick, body + 12, nick_len);
+
+    log_info("解析 JOIN_REQ：role=%u, nick_len=%u, nick=%s",
+             role, nick_len, nick);
+
     if (room_id == 0) {
         room_id = g_room_id;
     }
 
-    /* 找空闲 client 槽 */
     int slot = -1;
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (!g_clients[i].used) { slot = i; break; }
@@ -141,7 +212,6 @@ static void handle_join_req(int fd, uint16_t req_id,
         return;
     }
 
-    /* 分配 peer_id：房主 1，玩家从 2 开始 */
     uint8_t peer_id;
     if (role == 1) {
         peer_id = 1;
@@ -153,7 +223,6 @@ static void handle_join_req(int fd, uint16_t req_id,
         peer_id = g_next_peer_id++;
     }
 
-    /* 保存 client 信息 */
     struct client *c = &g_clients[slot];
     c->fd             = fd;
     c->used           = 1;
@@ -164,15 +233,14 @@ static void handle_join_req(int fd, uint16_t req_id,
     c->refl_ip        = 0;
     c->refl_port      = 0;
     c->last_heartbeat = time(NULL);
+    c->rxlen          = 0;
     memset(c->nick, 0, sizeof(c->nick));
-    memcpy(c->nick, body + 12, nick_len);
+    memcpy(c->nick, nick, nick_len);
 
-    /* 从临时表移除这个 fd，因为它已经正式加入了 */
     temp_remove(fd);
 
     log_info("收到 JOIN_REQ：peer_id=%u, nick=%s", peer_id, c->nick);
 
-    /* 构造 JOIN_OK 正文 */
     uint8_t out[1024];
     int off = 0;
 
@@ -185,53 +253,43 @@ static void handle_join_req(int fd, uint16_t req_id,
 
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (!g_clients[i].used) continue;
-        struct client *p = &g_clients[i];
-        out[off++] = p->peer_id;
-        memcpy(out + off, &p->priv_ip, 4); off += 4;
-        out[off++] = (p->tcp_port >> 8) & 0xFF;
-        out[off++] = p->tcp_port & 0xFF;
-        out[off++] = (p->udp_port >> 8) & 0xFF;
-        out[off++] = p->udp_port & 0xFF;
-        memcpy(out + off, &p->refl_ip, 4); off += 4;
-        out[off++] = (p->refl_port >> 8) & 0xFF;
-        out[off++] = p->refl_port & 0xFF;
-        uint8_t nl = strlen(p->nick);
-        out[off++] = nl;
-        memcpy(out + off, p->nick, nl); off += nl;
+        off += write_peer_entry(out + off, &g_clients[i]);
         peer_n++;
     }
     out[peer_n_off] = peer_n;
 
     send_header_and_body(fd, CMD_JOIN_OK, req_id, out, off);
 
-    /* 如果已有缓存 MANIFEST，立即再发一条 */
     if (g_manifest_len > 0) {
         send_header_and_body(fd, CMD_MANIFEST, 0, g_manifest, g_manifest_len);
     }
+
+    push_peer_list();
+    dump_peer_list_to_file("/tmp/room_peers.txt");
 }
 
-/* ---------- 处理 HEARTBEAT ---------- */
+/* ---------- HEARTBEAT ---------- */
 
 static void handle_heartbeat(int fd, uint16_t req_id)
 {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (g_clients[i].used && g_clients[i].fd == fd) {
             g_clients[i].last_heartbeat = time(NULL);
-            /* 心跳过密，不打 INFO，避免刷屏；超时仍有日志 */
+            log_info("收到 HEARTBEAT：peer_id=%u", g_clients[i].peer_id);
             break;
         }
     }
     send_header_and_body(fd, CMD_HEARTBEAT_ACK, req_id, NULL, 0);
 }
 
-/* ---------- 处理 PROBE ---------- */
+/* ---------- PROBE ---------- */
 
-static void handle_probe(int udp_fd, uint16_t req_id,
+static void handle_probe(int fd, uint16_t req_id,
                          const uint8_t *body, uint16_t body_len,
                          struct sockaddr_in *src)
 {
-    (void)req_id;
-    if (body_len < 3 || udp_fd < 0) return;
+    (void)fd;
+    if (body_len < 3) return;
 
     uint8_t peer_id = body[2];
     uint32_t ip     = src->sin_addr.s_addr;
@@ -240,34 +298,70 @@ static void handle_probe(int udp_fd, uint16_t req_id,
     log_info("收到 PROBE：peer_id=%u, 反射地址=%s:%u",
              peer_id, inet_ntoa(src->sin_addr), port);
 
+    int updated = 0;
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (g_clients[i].used && g_clients[i].peer_id == peer_id) {
+            if (g_clients[i].refl_ip != ip || g_clients[i].refl_port != port) {
+                updated = 1;
+            }
             g_clients[i].refl_ip   = ip;
             g_clients[i].refl_port = port;
             break;
         }
     }
 
-    /* PROBE_ACK：4 字节反射 IP + 2 字节反射端口（网络序） */
-    uint8_t ack_body[6];
-    memcpy(ack_body, &ip, 4);
-    uint16_t p_n = htons(port);
-    memcpy(ack_body + 4, &p_n, 2);
+    uint8_t ack[6];
+    memcpy(ack, &ip, 4);
+    ack[4] = (port >> 8) & 0xFF;
+    ack[5] = port & 0xFF;
 
     struct v1_header h;
     h.magic    = htons(V1_MAGIC);
     h.ver      = V1_VERSION;
     h.cmd      = CMD_PROBE_ACK;
-    h.req_id   = htons(0);
-    h.body_len = htons(sizeof(ack_body));
+    h.req_id   = htons(req_id);
+    h.body_len = htons(6);
 
-    uint8_t pkt[8 + 6];
-    memcpy(pkt, &h, 8);
-    memcpy(pkt + 8, ack_body, 6);
-    sendto(udp_fd, pkt, sizeof(pkt), 0, (struct sockaddr *)src, sizeof(*src));
+    uint8_t packet[8 + 6];
+    memcpy(packet, &h, 8);
+    memcpy(packet + 8, ack, 6);
+
+    if (g_udp_fd >= 0) {
+        sendto(g_udp_fd, packet, sizeof(packet), 0,
+               (struct sockaddr *)src, sizeof(*src));
+    }
+
+    if (updated) {
+        push_peer_list();
+    }
 }
 
-/* ---------- 处理 MANIFEST ---------- */
+/* ---------- ADDR_QUERY ---------- */
+
+static void handle_addr_query(int fd, uint16_t req_id,
+                              const uint8_t *body, uint16_t body_len)
+{
+    if (body_len < 1) {
+        send_error(fd, req_id, ERR_BODY_LEN);
+        return;
+    }
+
+    uint8_t target = body[0];
+    log_info("收到 ADDR_QUERY：目标 peer_id=%u", target);
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (g_clients[i].used && g_clients[i].peer_id == target) {
+            uint8_t out[64];
+            int off = write_peer_entry(out, &g_clients[i]);
+            send_header_and_body(fd, CMD_ADDR_REPLY, req_id, out, off);
+            return;
+        }
+    }
+
+    send_error(fd, req_id, ERR_NO_PIECE);
+}
+
+/* ---------- MANIFEST ---------- */
 
 static void handle_manifest(int fd, uint16_t req_id,
                             const uint8_t *body, uint16_t body_len)
@@ -280,8 +374,6 @@ static void handle_manifest(int fd, uint16_t req_id,
     g_manifest_len = body_len;
     log_info("收到 MANIFEST，已缓存 %d 字节", body_len);
 }
-
-/* ---------- 处理 MANIFEST_REQ ---------- */
 
 static void handle_manifest_req(int fd, uint16_t req_id)
 {
@@ -310,6 +402,9 @@ static void handle_packet(int fd, struct v1_header *h,
         case CMD_PROBE:
             handle_probe(fd, req_id, body, ntohs(h->body_len), src);
             break;
+        case CMD_ADDR_QUERY:
+            handle_addr_query(fd, req_id, body, ntohs(h->body_len));
+            break;
         case CMD_MANIFEST:
             handle_manifest(fd, req_id, body, ntohs(h->body_len));
             break;
@@ -323,60 +418,110 @@ static void handle_packet(int fd, struct v1_header *h,
     }
 }
 
-/* ---------- 处理临时连接的数据 ---------- */
+/* ---------- 处理临时连接的数据（读状态机） ---------- */
 
 static void handle_temp_data(int fd)
 {
-    uint8_t buf[BUF_SIZE];
-    int r = recv(fd, buf, sizeof(buf), 0);
+    /* 找到对应的临时连接 */
+    struct temp_conn *t = NULL;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (g_temps[i].used && g_temps[i].fd == fd) {
+            t = &g_temps[i];
+            break;
+        }
+    }
+    if (!t) return;
+
+    int r = recv(fd, t->rxbuf + t->rxlen, sizeof(t->rxbuf) - t->rxlen, 0);
     if (r <= 0) {
         log_info("临时连接断开：fd=%d", fd);
         close(fd);
         temp_remove(fd);
         return;
     }
-    if (r < 8) return;
+    t->rxlen += r;
 
-    struct v1_header *h = (struct v1_header *)buf;
-    if (ntohs(h->magic) != V1_MAGIC || h->ver != V1_VERSION) {
-        log_error("临时连接 magic/ver 错误，关闭 fd=%d", fd);
-        close(fd);
-        temp_remove(fd);
-        return;
-    }
+    /* 循环解析完整报文 */
+    while (t->rxlen >= 8) {
+        struct v1_header *h = (struct v1_header *)t->rxbuf;
 
-    /* 只有 JOIN_REQ 才允许从临时转正式 */
-    if (h->cmd == CMD_JOIN_REQ) {
-        handle_packet(fd, h, buf + 8, NULL);
-    } else {
-        log_error("临时连接收到非 JOIN_REQ 指令 0x%02X，关闭 fd=%d", h->cmd, fd);
-        close(fd);
-        temp_remove(fd);
+        if (ntohs(h->magic) != V1_MAGIC || h->ver != V1_VERSION) {
+            log_error("临时连接 magic/ver 错误，关闭 fd=%d", fd);
+            close(fd);
+            temp_remove(fd);
+            return;
+        }
+
+        uint16_t blen = ntohs(h->body_len);
+        if (t->rxlen < 8 + blen) break;   /* 还没读全 */
+
+        if (h->cmd == CMD_JOIN_REQ) {
+            handle_join_req(fd, ntohs(h->req_id), t->rxbuf + 8, blen);
+        } else {
+            log_error("临时连接收到非 JOIN_REQ 指令 0x%02X，关闭 fd=%d",
+                      h->cmd, fd);
+            close(fd);
+            temp_remove(fd);
+            return;
+        }
+
+        /* 把多余的字节前移 */
+        int consumed = 8 + blen;
+        memmove(t->rxbuf, t->rxbuf + consumed, t->rxlen - consumed);
+        t->rxlen -= consumed;
+
+        /* 如果 fd 已经被处理成正式 client，退出循环 */
+        if (!t->used) return;
     }
 }
 
-/* ---------- 处理已加入连接的数据 ---------- */
+/* ---------- 处理已加入连接的数据（读状态机） ---------- */
 
 static void handle_client_data(int fd)
 {
-    uint8_t buf[BUF_SIZE];
-    int r = recv(fd, buf, sizeof(buf), 0);
+    struct client *c = NULL;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (g_clients[i].used && g_clients[i].fd == fd) {
+            c = &g_clients[i];
+            break;
+        }
+    }
+    if (!c) return;
+
+    int r = recv(fd, c->rxbuf + c->rxlen, sizeof(c->rxbuf) - c->rxlen, 0);
     if (r <= 0) {
         log_info("客户端断开：fd=%d", fd);
         close(fd);
         client_remove(fd);
+        push_peer_list();
+        dump_peer_list_to_file("/tmp/room_peers.txt");
         return;
     }
-    if (r < 8) return;
+    c->rxlen += r;
 
-    struct v1_header *h = (struct v1_header *)buf;
-    if (ntohs(h->magic) != V1_MAGIC || h->ver != V1_VERSION) {
-        log_error("magic/ver 错误，关闭 fd=%d", fd);
-        close(fd);
-        client_remove(fd);
-        return;
+    while (c->rxlen >= 8) {
+        struct v1_header *h = (struct v1_header *)c->rxbuf;
+
+        if (ntohs(h->magic) != V1_MAGIC || h->ver != V1_VERSION) {
+            log_error("magic/ver 错误，关闭 fd=%d", fd);
+            close(fd);
+            client_remove(fd);
+            push_peer_list();
+            dump_peer_list_to_file("/tmp/room_peers.txt");
+            return;
+        }
+
+        uint16_t blen = ntohs(h->body_len);
+        if (c->rxlen < 8 + blen) break;
+
+        handle_packet(fd, h, c->rxbuf + 8, NULL);
+
+        int consumed = 8 + blen;
+        memmove(c->rxbuf, c->rxbuf + consumed, c->rxlen - consumed);
+        c->rxlen -= consumed;
+
+        if (!c->used) return;
     }
-    handle_packet(fd, h, buf + 8, NULL);
 }
 
 /* ---------- main ---------- */
@@ -387,11 +532,16 @@ int main(void)
     log_info("房间服务启动，TCP 端口 %d，UDP 端口 %d",
              PORT_ROOM_TCP, PORT_ROOM_UDP);
 
+    log_info("=== 实验 4：SO_REUSEADDR 对比 ===");
+    test_reuseaddr("0.0.0.0", "37401", 0);
+    test_reuseaddr("0.0.0.0", "37401", 1);
+
     int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (listen_fd < 0) { perror("socket"); return 1; }
 
     int opt = 1;
     setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    print_sock_options(listen_fd);
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -407,9 +557,9 @@ int main(void)
     }
     log_info("TCP 监听 0.0.0.0:%d", PORT_ROOM_TCP);
 
-    int udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (udp_fd < 0) { perror("udp socket"); return 1; }
-    /* UDP 不要 SO_REUSEADDR：多实例同时 bind 时 PROBE 可能进错进程 */
+    g_udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (g_udp_fd < 0) { perror("udp socket"); return 1; }
+    setsockopt(g_udp_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     struct sockaddr_in uaddr;
     memset(&uaddr, 0, sizeof(uaddr));
@@ -417,7 +567,7 @@ int main(void)
     uaddr.sin_addr.s_addr = INADDR_ANY;
     uaddr.sin_port        = htons(PORT_ROOM_UDP);
 
-    if (bind(udp_fd, (struct sockaddr *)&uaddr, sizeof(uaddr)) < 0) {
+    if (bind(g_udp_fd, (struct sockaddr *)&uaddr, sizeof(uaddr)) < 0) {
         perror("udp bind"); return 1;
     }
     log_info("UDP 监听 0.0.0.0:%d", PORT_ROOM_UDP);
@@ -426,17 +576,15 @@ int main(void)
         fd_set rfds;
         FD_ZERO(&rfds);
         FD_SET(listen_fd, &rfds);
-        FD_SET(udp_fd, &rfds);
-        int maxfd = (listen_fd > udp_fd) ? listen_fd : udp_fd;
+        FD_SET(g_udp_fd, &rfds);
+        int maxfd = (listen_fd > g_udp_fd) ? listen_fd : g_udp_fd;
 
-        /* 已加入客户端 */
         for (int i = 0; i < MAX_CLIENTS; i++) {
             if (g_clients[i].used) {
                 FD_SET(g_clients[i].fd, &rfds);
                 if (g_clients[i].fd > maxfd) maxfd = g_clients[i].fd;
             }
         }
-        /* 临时连接 */
         for (int i = 0; i < MAX_CLIENTS; i++) {
             if (g_temps[i].used) {
                 FD_SET(g_temps[i].fd, &rfds);
@@ -451,7 +599,6 @@ int main(void)
         int n = select(maxfd + 1, &rfds, NULL, NULL, &tv);
         if (n < 0) { perror("select"); break; }
 
-        /* 新 TCP 连接 */
         if (FD_ISSET(listen_fd, &rfds)) {
             struct sockaddr_in caddr;
             socklen_t clen = sizeof(caddr);
@@ -459,12 +606,12 @@ int main(void)
             if (cfd >= 0) {
                 log_info("新 TCP 连接：%s:%d",
                          inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
-                /* 放入临时连接表 */
                 int placed = 0;
                 for (int i = 0; i < MAX_CLIENTS; i++) {
                     if (!g_temps[i].used) {
                         g_temps[i].used = 1;
                         g_temps[i].fd   = cfd;
+                        g_temps[i].rxlen = 0;
                         placed = 1;
                         break;
                     }
@@ -476,39 +623,35 @@ int main(void)
             }
         }
 
-        /* UDP 探测 */
-        if (FD_ISSET(udp_fd, &rfds)) {
+        if (FD_ISSET(g_udp_fd, &rfds)) {
             uint8_t buf[BUF_SIZE];
             struct sockaddr_in src;
             socklen_t slen = sizeof(src);
-            int r = recvfrom(udp_fd, buf, sizeof(buf), 0,
+            int r = recvfrom(g_udp_fd, buf, sizeof(buf), 0,
                              (struct sockaddr *)&src, &slen);
             if (r >= 8) {
                 struct v1_header *h = (struct v1_header *)buf;
                 if (ntohs(h->magic) == V1_MAGIC &&
                     h->ver == V1_VERSION &&
                     h->cmd == CMD_PROBE) {
-                    handle_probe(udp_fd, ntohs(h->req_id),
+                    handle_probe(-1, ntohs(h->req_id),
                                  buf + 8, ntohs(h->body_len), &src);
                 }
             }
         }
 
-        /* 临时连接 */
         for (int i = 0; i < MAX_CLIENTS; i++) {
             if (!g_temps[i].used) continue;
             if (!FD_ISSET(g_temps[i].fd, &rfds)) continue;
             handle_temp_data(g_temps[i].fd);
         }
 
-        /* 已加入客户端 */
         for (int i = 0; i < MAX_CLIENTS; i++) {
             if (!g_clients[i].used) continue;
             if (!FD_ISSET(g_clients[i].fd, &rfds)) continue;
             handle_client_data(g_clients[i].fd);
         }
 
-        /* 心跳超时 */
         time_t now = time(NULL);
         for (int i = 0; i < MAX_CLIENTS; i++) {
             if (g_clients[i].used && g_clients[i].peer_id != 0) {
@@ -516,6 +659,9 @@ int main(void)
                     log_info("心跳超时，移除 peer_id=%u", g_clients[i].peer_id);
                     close(g_clients[i].fd);
                     g_clients[i].used = 0;
+                    g_clients[i].rxlen = 0;
+                    push_peer_list();
+                    dump_peer_list_to_file("/tmp/room_peers.txt");
                 }
             }
         }
