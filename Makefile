@@ -1,35 +1,30 @@
-# Fragment Archive — 第1周构建
-# Linux / POSIX 实验机。需要 pthread。
+# CS374 第2周 Makefile
+# 王：房间服务（tracker）、中继（relay）、公共模块、测试客户端
 
 CC      = gcc
 CFLAGS  = -Wall -g -Iinclude
-LDFLAGS = -pthread
+LDFLAGS =
 
-COMMON_SRC = src/common/log.c src/common/fa_stream.c
+# 默认目标：编译所有
+all: room_server relay_server test_client
 
-.PHONY: all clean dirs
+# 房间服务
+room_server: src/tracker/room_server.c src/common/log.c src/common/config.c include/common.h include/log.h include/config.h
+	$(CC) $(CFLAGS) -o room_server $^
 
-all: dirs room_server relay_server test_client client
+# 中继服务
+relay_server: src/relay/relay_server.c src/common/log.c src/common/config.c include/common.h include/log.h include/config.h
+	$(CC) $(CFLAGS) -o relay_server $^
 
-dirs:
-	mkdir -p logs
+# 测试客户端
+test_client: tests/test_client.c src/common/log.c src/common/config.c include/common.h include/log.h include/config.h
+	$(CC) $(CFLAGS) -o test_client $^
 
-room_server: src/tracker/room_server.c src/common/log.c include/common.h include/log.h
-	$(CC) $(CFLAGS) -o room_server src/tracker/room_server.c src/common/log.c
-
-relay_server: src/relay/relay_server.c src/common/log.c include/common.h include/log.h
-	$(CC) $(CFLAGS) -o relay_server src/relay/relay_server.c src/common/log.c
-
-test_client: tests/test_client.c src/common/log.c include/common.h include/log.h
-	$(CC) $(CFLAGS) -o test_client tests/test_client.c src/common/log.c
-
-# 刘：终端案情板 + 进房 + 探测/通告
-client: src/ui/client_main.c src/ui/ui_state.c src/ui/ui_term.c \
-	src/punch/udp_sock.c $(COMMON_SRC) \
-	include/common.h include/log.h include/ui_state.h include/punch.h include/fa_stream.h
-	$(CC) $(CFLAGS) $(LDFLAGS) -o client \
-		src/ui/client_main.c src/ui/ui_state.c src/ui/ui_term.c \
-		src/punch/udp_sock.c $(COMMON_SRC)
-
+# 清理
 clean:
-	rm -f room_server relay_server test_client client
+	rm -f room_server relay_server test_client
+
+# 重新编译
+re: clean all
+
+.PHONY: all clean re
