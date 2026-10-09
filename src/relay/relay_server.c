@@ -1,3 +1,4 @@
+#include "config.h"
 #include "common.h"
 #include "log.h"
 
@@ -14,6 +15,7 @@
 
 #define MAX_RELAY_CLIENTS 16
 #define BUF_SIZE          2048
+#define ROOM_PEERS_FILE   "/tmp/room_peers.txt"
 
 struct relay_bind {
     uint8_t peer_id;
@@ -21,7 +23,14 @@ struct relay_bind {
     int     used;
 };
 
+/* 还未 RELAY_BIND 的临时连接 */
+struct temp_relay {
+    int fd;
+    int used;
+};
+
 static struct relay_bind g_bind_table[MAX_RELAY_CLIENTS];
+static struct temp_relay g_relay_temps[MAX_RELAY_CLIENTS];
 
 /* ---------- 工具函数 ---------- */
 
@@ -58,6 +67,44 @@ static void send_error(int fd, uint16_t req_id, uint16_t err)
     send_header_and_body(fd, CMD_ERROR, req_id, &body, sizeof(body));
 }
 
+/* 读房间名单文件，判断 peer_id 是否在册 */
+static int is_peer_in_room(uint8_t peer_id)
+{
+    FILE *fp = fopen(ROOM_PEERS_FILE, "r");
+    if (!fp) {
+        log_error("无法打开房间名单文件 %s", ROOM_PEERS_FILE);
+        return 0;
+    }
+    char line[32];
+    int found = 0;
+    while (fgets(line, sizeof(line), fp)) {
+        int id = atoi(line);
+        if (id == peer_id) { found = 1; break; }
+    }
+    fclose(fp);
+    return found;
+}
+
+/* 从临时表移除 */
+static void relay_temp_remove(int fd)
+{
+    for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
+        if (g_relay_temps[i].used && g_relay_temps[i].fd == fd) {
+            g_relay_temps[i].used = 0;
+        }
+    }
+}
+
+/* 从绑定表移除 */
+static void relay_bind_remove(int fd)
+{
+    for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
+        if (g_bind_table[i].used && g_bind_table[i].fd == fd) {
+            g_bind_table[i].used = 0;
+        }
+    }
+}
+
 /* ---------- 处理 RELAY_BIND ---------- */
 
 static void handle_relay_bind(int fd, uint16_t req_id,
@@ -74,13 +121,16 @@ static void handle_relay_bind(int fd, uint16_t req_id,
 
     log_info("收到 RELAY_BIND：peer_id=%u, room_id=%u", peer_id, room_id);
 
-    if (peer_id < 1 || peer_id > 4) {
-        log_error("RELAY_BIND 身份不符：peer_id=%u", peer_id);
+    /* 核对身份 */
+    if (!is_peer_in_room(peer_id)) {
+        log_error("RELAY_BIND 身份不符：peer_id=%u 不在房间名单", peer_id);
         send_error(fd, req_id, ERR_RELAY_ID);
         close(fd);
+        relay_temp_remove(fd);
         return;
     }
 
+    /* 同一 peer_id 再次 BIND：关旧连接 */
     for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
         if (g_bind_table[i].used && g_bind_table[i].peer_id == peer_id) {
             log_info("peer_id=%u 重新绑定，关闭旧连接 fd=%d",
@@ -89,6 +139,9 @@ static void handle_relay_bind(int fd, uint16_t req_id,
             g_bind_table[i].used = 0;
         }
     }
+
+    /* 从临时表移除，正式绑定 */
+    relay_temp_remove(fd);
 
     for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
         if (!g_bind_table[i].used) {
@@ -116,13 +169,70 @@ static void handle_packet(int fd, struct v1_header *h, const uint8_t *body)
             handle_relay_bind(fd, req_id, body, ntohs(h->body_len));
             break;
         case CMD_RELAY_WRAP:
-            log_info("收到 RELAY_WRAP（第 1 周不转发）");
+            log_info("收到 RELAY_WRAP（第 2 周仍不转发）");
             break;
         default:
             log_error("中继收到未知指令 0x%02X", h->cmd);
             send_error(fd, req_id, ERR_UNKNOWN_CMD);
             break;
     }
+}
+
+/* ---------- 处理临时连接的数据 ---------- */
+
+static void handle_relay_temp_data(int fd)
+{
+    uint8_t buf[BUF_SIZE];
+    int r = recv(fd, buf, sizeof(buf), 0);
+    if (r <= 0) {
+        log_info("临时中继连接断开：fd=%d", fd);
+        close(fd);
+        relay_temp_remove(fd);
+        return;
+    }
+    if (r < 8) return;
+
+    struct v1_header *h = (struct v1_header *)buf;
+    if (ntohs(h->magic) != V1_MAGIC || h->ver != V1_VERSION) {
+        log_error("临时中继连接 magic/ver 错误，关闭 fd=%d", fd);
+        close(fd);
+        relay_temp_remove(fd);
+        return;
+    }
+
+    /* 只有 RELAY_BIND 才允许转正式 */
+    if (h->cmd == CMD_RELAY_BIND) {
+        handle_relay_bind(fd, ntohs(h->req_id), buf + 8, ntohs(h->body_len));
+    } else {
+        log_error("临时中继连接收到非 RELAY_BIND 指令 0x%02X，关闭 fd=%d",
+                  h->cmd, fd);
+        close(fd);
+        relay_temp_remove(fd);
+    }
+}
+
+/* ---------- 处理已绑定连接的数据 ---------- */
+
+static void handle_relay_bound_data(int fd)
+{
+    uint8_t buf[BUF_SIZE];
+    int r = recv(fd, buf, sizeof(buf), 0);
+    if (r <= 0) {
+        log_info("中继连接断开：fd=%d", fd);
+        close(fd);
+        relay_bind_remove(fd);
+        return;
+    }
+    if (r < 8) return;
+
+    struct v1_header *h = (struct v1_header *)buf;
+    if (ntohs(h->magic) != V1_MAGIC || h->ver != V1_VERSION) {
+        log_error("magic/ver 错误，关闭 fd=%d", fd);
+        close(fd);
+        relay_bind_remove(fd);
+        return;
+    }
+    handle_packet(fd, h, buf + 8);
 }
 
 /* ---------- main ---------- */
@@ -158,16 +268,25 @@ int main(void)
         FD_SET(listen_fd, &rfds);
         int maxfd = listen_fd;
 
+        /* 已绑定连接 */
         for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
             if (g_bind_table[i].used) {
                 FD_SET(g_bind_table[i].fd, &rfds);
                 if (g_bind_table[i].fd > maxfd) maxfd = g_bind_table[i].fd;
             }
         }
+        /* 临时连接 */
+        for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
+            if (g_relay_temps[i].used) {
+                FD_SET(g_relay_temps[i].fd, &rfds);
+                if (g_relay_temps[i].fd > maxfd) maxfd = g_relay_temps[i].fd;
+            }
+        }
 
         int n = select(maxfd + 1, &rfds, NULL, NULL, NULL);
         if (n < 0) { perror("select"); break; }
 
+        /* 新连接 */
         if (FD_ISSET(listen_fd, &rfds)) {
             struct sockaddr_in caddr;
             socklen_t clen = sizeof(caddr);
@@ -175,31 +294,34 @@ int main(void)
             if (cfd >= 0) {
                 log_info("新中继连接：%s:%d",
                          inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
+                int placed = 0;
+                for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
+                    if (!g_relay_temps[i].used) {
+                        g_relay_temps[i].used = 1;
+                        g_relay_temps[i].fd   = cfd;
+                        placed = 1;
+                        break;
+                    }
+                }
+                if (!placed) {
+                    log_error("临时中继连接表已满，关闭 fd=%d", cfd);
+                    close(cfd);
+                }
             }
         }
 
+        /* 临时连接 */
+        for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
+            if (!g_relay_temps[i].used) continue;
+            if (!FD_ISSET(g_relay_temps[i].fd, &rfds)) continue;
+            handle_relay_temp_data(g_relay_temps[i].fd);
+        }
+
+        /* 已绑定连接 */
         for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
             if (!g_bind_table[i].used) continue;
             if (!FD_ISSET(g_bind_table[i].fd, &rfds)) continue;
-
-            uint8_t buf[BUF_SIZE];
-            int r = recv(g_bind_table[i].fd, buf, sizeof(buf), 0);
-            if (r <= 0) {
-                log_info("中继连接断开：fd=%d", g_bind_table[i].fd);
-                close(g_bind_table[i].fd);
-                g_bind_table[i].used = 0;
-                continue;
-            }
-            if (r < 8) continue;
-
-            struct v1_header *h = (struct v1_header *)buf;
-            if (ntohs(h->magic) != V1_MAGIC || h->ver != V1_VERSION) {
-                log_error("magic/ver 错误，关闭 fd=%d", g_bind_table[i].fd);
-                close(g_bind_table[i].fd);
-                g_bind_table[i].used = 0;
-                continue;
-            }
-            handle_packet(g_bind_table[i].fd, h, buf + 8);
+            handle_relay_bound_data(g_bind_table[i].fd);
         }
     }
 
