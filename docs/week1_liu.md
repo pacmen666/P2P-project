@@ -17,6 +17,8 @@
 
 ## 如何跑（本机双进程）
 
+在 **Linux 实验机** 或 **WSL**（Windows 路径 `D:\Coding_Project\CS374\Project` → WSL 内 `/mnt/d/Coding_Project/CS374/Project`）。见 `docs/wsl.md`。
+
 ```bash
 make room_server client
 mkdir -p logs
@@ -33,11 +35,28 @@ announce
 
 预期：JOIN_OK 后案情板显示 peer 与昵称；输入 `probe` 后本机反射行应更新（`PROBE` 发往房间 TCP 的 `getpeername` 地址:37402）。收到清单时只显示整文件摘要前缀，不出现种子。
 
-自检：`python3 tests/probe_ack_check.py`（需先起 `room_server`）或 `tests/probe_client_min`。起两个 `room_server` 时 UDP 探测会错乱——先杀掉旧进程。
+## 自动化测试（WSL / Linux）
 
-## 本周未做（按计划属后续周）
+```bash
+cd /mnt/d/Coding_Project/CS374/Project
+mkdir -p logs
+bash tests/probe_only.sh
+bash tests/liu_week2_smoke.sh
+bash tests/full_liu_smoke.sh
+```
+
+详见 `tests/README.md`。起两个 `room_server` 时 UDP 探测会错乱——脚本会先 `pkill` 旧进程。
+
+## 第 2～3 周已做（刘侧）
+
+- `PEER_LIST` 成员表、`markhave` 联调证物来源
+- 房主 `announce`、已 join 端收 `ANNOUNCE`（路径「通告发现」）
+- 关房后晚进玩家（**peer 0、不 join**）收通告并 TCP `MANIFEST_REQ`：手工四窗流程见 `docs/wsl.md`
+- `next` / `answer` / `choose` 命令骨架；真实局号依赖陈侧 MANIFEST
+
+## 仍未做 / 依赖他组
 
 - 真实 GUI（当前为终端板）
 - 完整打洞对发与中继回落（第 4 周）
-- 通告后 `MANIFEST_REQ` 走房主互传 TCP（第 3 周实验 7）
-- 案情板「来源」列依赖彭的传块（第 2 周）
+- 房主缓存并下发真实 MANIFEST（陈 + 王侧上传）
+- 案情板来源与互传由彭侧 HAVE/BITFIELD 驱动（非 `markhave`）

@@ -33,7 +33,11 @@ CS374 网络编程课程项目。合作解谜为外壳，核心是 P2P 分块交
 
 ## 构建
 
-提交环境以 POSIX / Linux 实验机为准。根目录 `Makefile`：`make room_server relay_server client`。Windows 开发机不要把 C 运行时 `pipe` 丢进 Winsock `select`。刘第 1 周说明见 `docs/week1_liu.md`。
+**Linux / WSL（推荐）**：仓库根 `make` 或 `make room_server relay_server test_client client`。  
+Windows 开发机见 [`docs/wsl.md`](docs/wsl.md)。不要把 C 运行时 `pipe` 丢进 Winsock `select`（见 `AGENT.md`）。
+
+刘侧说明见 `docs/week1_liu.md`。  
+**测试（WSL）**：`bash tests/probe_only.sh` → `bash tests/liu_week2_smoke.sh` → `bash tests/full_liu_smoke.sh`；关房四窗与全部脚本见 [`tests/README.md`](tests/README.md)、[`docs/wsl.md`](docs/wsl.md)。
 
 ## 成员
 
