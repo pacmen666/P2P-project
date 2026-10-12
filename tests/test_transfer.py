@@ -47,7 +47,12 @@ class Run:
         else:cmd+=['--data-dir',str(cache or self.dir/name)]
         if auto:cmd+=['--auto']
         env=os.environ.copy()
-        if drop:env.update(LD_PRELOAD=str(ROOT/'tests/udp_fault.so'),FA_TEST_UDP_DROP=drop)
+        if drop:
+            key = ('DYLD_INSERT_LIBRARIES'
+                   if __import__('sys').platform == 'darwin'
+                   else 'LD_PRELOAD')
+            env[key] = str(ROOT/'tests/udp_fault.so')
+            env['FA_TEST_UDP_DROP'] = drop
         self.start(name,cmd,env)
         wait_for(lambda:'JOINED' in self.log(name),name+' joined')
     def command(self,name,line):
@@ -105,6 +110,7 @@ def udp(mode):
             r.start('relay',[str(ROOT/'relay_transfer')]);wait_for(lambda:'RELAY_READY' in r.log('relay'),'relay ready')
         r.client('Host',host=True,mode='udp',drop=mode)
         r.client('Bob',auto=True,mode='udp');r.complete('Bob',timeout=25)
+        assert 'FAULT_DROP' in r.log('Host'), 'UDP fault injection did not activate'
         assert 'UDP_RETRY' in r.log('Bob')
         if mode=='all':
             assert 'UDP_FALLBACK' in r.log('Bob') and 'RELAY_FORWARD' in r.log('relay')

@@ -11,15 +11,15 @@ all: room_server relay_server test_client client
 
 # 房间服务
 room_server: src/tracker/room_server.c src/common/log.c src/common/config.c include/common.h include/log.h include/config.h
-	$(CC) $(CFLAGS) -o room_server $^
+	$(CC) $(CFLAGS) -o room_server $(filter %.c %.o %.a,$^)
 
 # 中继服务
 relay_server: src/relay/relay_server.c src/common/log.c src/common/config.c include/common.h include/log.h include/config.h
-	$(CC) $(CFLAGS) -o relay_server $^
+	$(CC) $(CFLAGS) -o relay_server $(filter %.c %.o %.a,$^)
 
 # 测试客户端
 test_client: tests/test_client.c src/common/log.c src/common/config.c include/common.h include/log.h include/config.h
-	$(CC) $(CFLAGS) -o test_client $^
+	$(CC) $(CFLAGS) -o test_client $(filter %.c %.o %.a,$^)
 
 # 刘：案情板、房间连接、通告与打洞客户端
 client: src/ui/client_main.c src/ui/ui_state.c src/ui/ui_term.c \
