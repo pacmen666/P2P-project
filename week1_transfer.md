@@ -95,7 +95,7 @@ SUMMARY ... result=PASS
 
 ### macOS 与 Windows
 
-本次实测平台为 Linux。源码采用 POSIX，可在 macOS 配置 C 编译器和 OpenSSL 头文件／库路径后尝试构建，但尚未实测，不标记为通过。Windows 原生 Winsock 不能直接使用本次 pipe；可先在 Linux 实验机或 WSL 中运行，原生适配按协议另做。
+本次实测平台为 Linux。源码采用 POSIX，可在 macOS 配置 C 编译器和 OpenSSL 头文件／库路径后尝试构建，但尚未实测，不标记为通过。Windows 上推荐 **WSL2** 构建运行（见 `docs/wsl.md`）；原生 Winsock 不能直接使用本次 pipe。
 
 ## 4. 实现怎样工作
 

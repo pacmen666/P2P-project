@@ -39,6 +39,11 @@
 - Windows：`select` 只放 `SOCKET`，禁止 CRT `_pipe`。  
 - 本网 `connect` 非阻塞、1.5 秒；仅较小 `peer_id` 发起。
 
+## 本机开发与文档
+
+- Windows 开发机：默认 **WSL2 + Ubuntu**，路径 `/mnt/d/.../Project`，`make` 构建；见 `docs/wsl.md`。  
+- 源码按 **Linux POSIX** 维护，不在此仓库做 MSYS2/原生 Windows 编译主线。
+
 ## Git
 
 - 默认在当前分支工作；用户未要求时不要 `commit` / `push` / `--force`。  
