@@ -42,6 +42,15 @@ int punch_open(struct punch_sock *ps)
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
+#ifdef FA_TRANSFER_CLIENT
+    /* v1: each peer owns an ephemeral PROBE/PUNCH/data socket. Sharing 37404
+       with SO_REUSEPORT load-balances unicast between processes incorrectly.
+       Broadcast reception is not provided by this transfer integration client. */
+    addr.sin_port = htons(0);
+    if (bind(ps->fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(ps->fd); ps->fd = -1; return -1;
+    }
+#else
     /* 通告接收必须监听 37404；该 fd 同时承担 PROBE/PUNCH。 */
     addr.sin_port = htons(PORT_ANNOUNCE);
 
@@ -55,6 +64,7 @@ int punch_open(struct punch_sock *ps)
         }
         log_info("UDP 37404 占用，已回退为临时端口（通告接收可能受限）");
     }
+#endif
 
     socklen_t len = sizeof(addr);
     if (getsockname(ps->fd, (struct sockaddr *)&addr, &len) < 0) {

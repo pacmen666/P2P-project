@@ -36,9 +36,30 @@ probe_client_min: tests/probe_client_min.c src/punch/udp_sock.c src/common/log.c
 
 # 清理
 clean:
-	rm -f room_server relay_server test_client client tests/probe_client_min
+	rm -f room_server relay_server test_client client tests/probe_client_min client_transfer relay_transfer tests/udp_fault.so tests/test_transfer_stream
 
 # 重新编译
 re: clean all
 
 .PHONY: all clean re probe_client_min
+# 彭的独立联调入口：保留原 client / relay_server 默认行为。
+TRANSFER_SRC = src/transfer/client_main.c src/transfer/transfer.c src/generate/generate.c
+TRANSFER_SHARED = src/ui/ui_state.c src/ui/ui_term.c src/punch/udp_sock.c src/common/log.c src/common/fa_stream.c
+client_transfer: $(TRANSFER_SRC) $(TRANSFER_SHARED) src/transfer/transfer.h include/common.h include/fa_stream.h
+	$(CC) $(CFLAGS) -DFA_TRANSFER_CLIENT -Isrc/transfer -Isrc/generate $(PTHREAD) -o $@ $(TRANSFER_SRC) $(TRANSFER_SHARED) $(LDFLAGS) -lcrypto
+
+relay_transfer: src/relay/relay_forward.c src/common/fa_stream.c include/common.h include/fa_stream.h
+	$(CC) $(CFLAGS) -o $@ src/relay/relay_forward.c src/common/fa_stream.c $(LDFLAGS)
+
+transfer: room_server client_transfer relay_transfer
+
+tests/udp_fault.so: tests/udp_fault.c
+	$(CC) -Wall -Wextra -shared -fPIC -o $@ $< -ldl
+
+tests/test_transfer_stream: tests/test_transfer_stream.c src/common/fa_stream.c include/fa_stream.h
+	$(CC) $(CFLAGS) -Wextra -Werror -o $@ tests/test_transfer_stream.c src/common/fa_stream.c
+
+test-transfer: transfer tests/udp_fault.so tests/test_transfer_stream
+	./tests/test_transfer_stream
+	python3 -u tests/test_transfer.py
+.PHONY: transfer test-transfer

@@ -19,3 +19,9 @@
 | 本地 | 实验 6 开关、限速可走配置文件（若提交须不含密钥） |
 | 只读 | 子包尺寸与「禁止 UDP connect」 |
 | 可编辑 | 传送与 select（彭主责）。第 2 周起必须用 `generate/` 真分块 |
+
+## 可运行联调入口
+
+运行 `make transfer`，使用 `./client_transfer`（原 `./client` 保留）。
+测试：`make test-transfer`。完整操作、接口归属及未验收边界见
+[`docs/transfer_peng.md`](../../docs/transfer_peng.md)。
