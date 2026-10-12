@@ -2,6 +2,7 @@
 set -e
 cd "$(dirname "$0")/.."
 mkdir -p logs
+make room_server client
 ./room_server >logs/room_run.log 2>&1 &
 RP=$!
 sleep 1
