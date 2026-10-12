@@ -68,10 +68,10 @@ void ui_term_draw(const struct ui_state *s)
             printf("  · %s\n", s->events[i]);
     }
     printf("--------------------------------------------\n");
-    printf("命令：join <nick> [host|role] | probe | announce | redraw | quit\n");
+    printf("命令：join/probe/announce | next | answer <答案> | choose <选项>\n");
     printf("  join 侦探 localhost     — 以玩家进房\n");
     printf("  join 房主 localhost host — 以房主进房\n");
-    printf("  probe / announce / redraw / quit\n");
+    printf("  markhave <文件号> [来源]（联调注入） | redraw | quit\n");
     printf("============================================\n");
     fflush(stdout);
 }

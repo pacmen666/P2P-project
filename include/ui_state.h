@@ -74,6 +74,10 @@ void ui_apply_manifest_header(struct ui_state *s, uint32_t session_id,
 void ui_set_file_meta(struct ui_state *s, uint8_t file_id, uint8_t chapter,
                       uint8_t kind, uint32_t file_size,
                       const uint8_t file_hash[32]);
+/* 彭/transfer 回调：更新证物已有与来源（第2周对接面） */
+int ui_set_file_status(struct ui_state *s, uint8_t file_id, int have,
+                       const char *source_nick);
+void ui_advance_phase(struct ui_state *s, enum ui_phase phase);
 
 const char *ui_path_label(int path_type);
 const char *ui_phase_label(enum ui_phase p);

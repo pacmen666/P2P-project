@@ -33,18 +33,27 @@ int punch_open(struct punch_sock *ps)
 
     int yes = 1;
     setsockopt(ps->fd, SOL_SOCKET, SO_BROADCAST, &yes, sizeof(yes));
+    setsockopt(ps->fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+#ifdef SO_REUSEPORT
+    setsockopt(ps->fd, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
+#endif
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port = htons(0);
+    /* 通告接收必须监听 37404；该 fd 同时承担 PROBE/PUNCH。 */
+    addr.sin_port = htons(PORT_ANNOUNCE);
 
     if (bind(ps->fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        perror("punch bind");
-        close(ps->fd);
-        ps->fd = -1;
-        return -1;
+        addr.sin_port = htons(0);
+        if (bind(ps->fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+            perror("punch bind");
+            close(ps->fd);
+            ps->fd = -1;
+            return -1;
+        }
+        log_info("UDP 37404 占用，已回退为临时端口（通告接收可能受限）");
     }
 
     socklen_t len = sizeof(addr);
@@ -196,5 +205,32 @@ int punch_parse_announce(const uint8_t *body, uint16_t body_len,
     if (15 + nl > body_len || nl >= nick_cap) return -1;
     memcpy(nick, body + 15, nl);
     nick[nl] = '\0';
+    return 0;
+}
+
+int punch_send_punch(struct punch_sock *ps, const struct sockaddr_in *dst,
+                     uint32_t session_id, uint8_t from_id, uint8_t to_id)
+{
+    if (!ps || ps->fd < 0 || !dst || from_id == 0 || to_id == 0) return -1;
+    uint8_t pkt[HEADER_SIZE + 6];
+    pack_header(pkt, CMD_PUNCH, 0, 6);
+    uint32_t sid = htonl(session_id);
+    memcpy(pkt + HEADER_SIZE, &sid, 4);
+    pkt[HEADER_SIZE + 4] = from_id;
+    pkt[HEADER_SIZE + 5] = to_id;
+    return sendto(ps->fd, pkt, sizeof(pkt), 0,
+                  (const struct sockaddr *)dst, sizeof(*dst)) ==
+           (ssize_t)sizeof(pkt) ? 0 : -1;
+}
+
+int punch_parse_punch(const uint8_t *body, uint16_t body_len,
+                      uint32_t *session_id, uint8_t *from_id, uint8_t *to_id)
+{
+    if (!body || body_len != 6 || !session_id || !from_id || !to_id) return -1;
+    uint32_t sid;
+    memcpy(&sid, body, 4);
+    *session_id = ntohl(sid);
+    *from_id = body[4];
+    *to_id = body[5];
     return 0;
 }

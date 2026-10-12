@@ -10,7 +10,7 @@
 | `ui_term.c` | 终端案情板 |
 | `client_main.c` | 进房、心跳、收 MANIFEST、对接 punch、select + 唤醒 |
 
-构建：`make client` → 根目录 `./client`。说明见 `docs/week1_liu.md`。
+构建：仓库根 `make client` → `./client`（Linux / WSL）。说明见 `docs/week1_liu.md`、`docs/wsl.md`。
 
 ## 规则
 

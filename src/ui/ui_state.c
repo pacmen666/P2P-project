@@ -99,6 +99,27 @@ void ui_set_file_meta(struct ui_state *s, uint8_t file_id, uint8_t chapter,
     f->source_nick[0] = '\0';
 }
 
+int ui_set_file_status(struct ui_state *s, uint8_t file_id, int have,
+                       const char *source_nick)
+{
+    if (file_id < 1 || file_id > UI_MAX_FILES) return -1;
+    struct ui_file *f = &s->files[file_id - 1];
+    if (!f->used) return -1;
+    f->have = have ? 1 : 0;
+    if (source_nick && source_nick[0]) {
+        snprintf(f->source_nick, sizeof(f->source_nick), "%s", source_nick);
+    } else if (!have) {
+        f->source_nick[0] = '\0';
+    }
+    return 0;
+}
+
+void ui_advance_phase(struct ui_state *s, enum ui_phase phase)
+{
+    if (phase >= UI_PHASE_IDLE && phase <= UI_PHASE_DONE)
+        s->phase = phase;
+}
+
 const char *ui_path_label(int path_type)
 {
     switch (path_type) {

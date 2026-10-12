@@ -21,6 +21,17 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <fcntl.h>
+
+#define MAX_PEER_LINKS 4
+
+struct app;
+struct peer_link {
+    int fd;
+    struct fa_reader reader;
+    struct app *app;
+    char nick[UI_NICK_MAX + 1];
+};
 
 struct app {
     struct ui_state   ui;
@@ -39,6 +50,15 @@ struct app {
     pthread_t         net_thr;
     struct fa_reader  room_reader;
     time_t            last_hb;
+    struct peer_link  links[MAX_PEER_LINKS];
+    uint8_t           manifest_raw[4096];
+    uint16_t          manifest_len;
+    uint32_t          announced_host_ip_n;
+    uint16_t          announced_host_tcp_h;
+    uint32_t          announced_session;
+    uint8_t           punch_wait_peer;   /* 等待互达的 peer_id；0=无 */
+    time_t            punch_wait_since;
+    uint8_t           punch_ok_peer[UI_MAX_PEERS + 1]; /* 已认证收到 PUNCH */
 };
 
 enum wake_cmd {
@@ -50,6 +70,13 @@ enum wake_cmd {
 };
 
 static void handle_udp(struct app *a);
+
+static void redraw(struct app *a)
+{
+    ui_state_lock(&a->ui);
+    ui_term_draw(&a->ui);
+    ui_state_unlock(&a->ui);
+}
 
 static void wake_send(struct app *a, uint8_t c)
 {
@@ -157,10 +184,74 @@ static int parse_join_ok(struct app *a, const uint8_t *body, uint16_t blen)
     return 0;
 }
 
+static int parse_peer_entries(struct app *a, const uint8_t *body,
+                              uint16_t blen, int replace_all)
+{
+    int off = 0;
+    uint8_t peer_n;
+    if (off >= blen) return -1;
+    peer_n = body[off++];
+
+    ui_state_lock(&a->ui);
+    if (replace_all) ui_clear_peers(&a->ui);
+    for (uint8_t i = 0; i < peer_n; i++) {
+        if (off + 16 > blen) {
+            ui_state_unlock(&a->ui);
+            return -1;
+        }
+        struct ui_peer p;
+        memset(&p, 0, sizeof(p));
+        p.used = 1;
+        p.peer_id = body[off++];
+        memcpy(&p.priv_ip_n, body + off, 4); off += 4;
+        p.tcp_port_h = (uint16_t)((body[off] << 8) | body[off + 1]); off += 2;
+        p.udp_port_h = (uint16_t)((body[off] << 8) | body[off + 1]); off += 2;
+        memcpy(&p.refl_ip_n, body + off, 4); off += 4;
+        p.refl_port_h = (uint16_t)((body[off] << 8) | body[off + 1]); off += 2;
+        uint8_t nl = body[off++];
+        if (nl > UI_NICK_MAX || off + nl > blen) {
+            ui_state_unlock(&a->ui);
+            return -1;
+        }
+        memcpy(p.nick, body + off, nl);
+        p.nick[nl] = '\0';
+        off += nl;
+        ui_set_peer(&a->ui, &p);
+    }
+    ui_set_status(&a->ui, "成员名单已更新（%u 人）", peer_n);
+    ui_push_event(&a->ui, "PEER_LIST：%u 人", peer_n);
+    ui_term_draw(&a->ui);
+    ui_state_unlock(&a->ui);
+    for (int i = 0; i < UI_MAX_PEERS; i++) {
+        const struct ui_peer *p = &a->ui.peers[i];
+        if (!p->used || p->peer_id == a->ui.my_peer_id) continue;
+        if (p->refl_ip_n && p->refl_port_h && a->ui.session_id) {
+            struct sockaddr_in dst;
+            memset(&dst, 0, sizeof(dst));
+            dst.sin_family = AF_INET;
+            dst.sin_addr.s_addr = p->refl_ip_n;
+            dst.sin_port = htons(p->refl_port_h);
+            punch_send_punch(&a->punch, &dst, a->ui.session_id,
+                             a->ui.my_peer_id, p->peer_id);
+            a->punch_wait_peer = p->peer_id;
+            a->punch_wait_since = time(NULL);
+        } else if (a->room_fd >= 0 && !p->refl_ip_n) {
+            uint16_t req = ++a->next_req;
+            if (req == 0) req = ++a->next_req;
+            send_raw(a->room_fd, CMD_ADDR_QUERY, req, &p->peer_id, 1);
+        }
+    }
+    return 0;
+}
+
 /* MANIFEST：session + seed_hash(忽略展示) + file_n + 文件项 */
 static int parse_manifest(struct app *a, const uint8_t *body, uint16_t blen)
 {
     if (blen < 37) return -1;
+    if (blen <= sizeof(a->manifest_raw)) {
+        memcpy(a->manifest_raw, body, blen);
+        a->manifest_len = blen;
+    }
     uint32_t sid;
     memcpy(&sid, body, 4);
     sid = ntohl(sid);
@@ -185,6 +276,138 @@ static int parse_manifest(struct app *a, const uint8_t *body, uint16_t blen)
         ui_set_file_meta(&a->ui, file_id, chapter, kind, fsz, fh);
     }
     ui_set_status(&a->ui, "已收清单 session=%08X（未展示种子）", sid);
+    ui_push_event(&a->ui, "MANIFEST：session=%08X，文件=%u", sid, file_n);
+    ui_term_draw(&a->ui);
+    ui_state_unlock(&a->ui);
+    return 0;
+}
+
+static struct peer_link *add_peer_link(struct app *a, int fd, const char *nick)
+{
+    for (int i = 0; i < MAX_PEER_LINKS; i++) {
+        if (a->links[i].fd < 0) {
+            a->links[i].fd = fd;
+            a->links[i].app = a;
+            fa_reader_init(&a->links[i].reader);
+            snprintf(a->links[i].nick, sizeof(a->links[i].nick), "%s",
+                     nick && nick[0] ? nick : "peer");
+            fa_nonblock(fd);
+            return &a->links[i];
+        }
+    }
+    close(fd);
+    return NULL;
+}
+
+static int bitfield_is_complete(const uint8_t *bits, uint16_t piece_count)
+{
+    for (uint16_t i = 0; i < piece_count; i++) {
+        if ((bits[i / 8] & (uint8_t)(0x80u >> (i % 8))) == 0)
+            return 0;
+    }
+    return piece_count > 0;
+}
+
+static int on_peer_msg(void *ctx, const struct fa_message *m)
+{
+    struct peer_link *link = ctx;
+    struct app *a = link->app;
+    if (m->cmd == CMD_MANIFEST_REQ) {
+        if (a->manifest_len > 0)
+            send_raw(link->fd, CMD_MANIFEST, m->request,
+                     a->manifest_raw, a->manifest_len);
+        else {
+            uint16_t err = htons(ERR_NO_MANIFEST);
+            send_raw(link->fd, CMD_ERROR, m->request, &err, sizeof(err));
+        }
+    } else if (m->cmd == CMD_MANIFEST) {
+        parse_manifest(a, m->body, m->length);
+        ui_state_lock(&a->ui);
+        a->ui.path_type = PATH_ANNOUNCE;
+        ui_push_event(&a->ui, "已从房主取得 MANIFEST");
+        ui_state_unlock(&a->ui);
+        redraw(a);
+    } else if (m->cmd == CMD_HAVE && m->length >= 7) {
+        uint32_t sid;
+        memcpy(&sid, m->body, 4);
+        sid = ntohl(sid);
+        uint8_t file_id = m->body[4];
+        if (sid == a->ui.session_id && file_id >= 1 && file_id <= UI_MAX_FILES) {
+            ui_state_lock(&a->ui);
+            ui_set_file_status(&a->ui, file_id, 1, link->nick);
+            ui_push_event(&a->ui, "HAVE 证物%u 来源=%s", file_id, link->nick);
+            ui_term_draw(&a->ui);
+            ui_state_unlock(&a->ui);
+        }
+    } else if (m->cmd == CMD_BITFIELD && m->length >= 8) {
+        uint32_t sid;
+        memcpy(&sid, m->body, 4);
+        sid = ntohl(sid);
+        uint8_t file_id = m->body[5];
+        uint16_t pieces = (uint16_t)((m->body[6] << 8) | m->body[7]);
+        size_t bytes = (pieces + 7u) / 8u;
+        if (sid == a->ui.session_id && 8u + bytes <= m->length &&
+            bitfield_is_complete(m->body + 8, pieces)) {
+            ui_state_lock(&a->ui);
+            ui_set_file_status(&a->ui, file_id, 1, link->nick);
+            ui_push_event(&a->ui, "证物%u 已完整，来源=%s",
+                          file_id, link->nick);
+            ui_term_draw(&a->ui);
+            ui_state_unlock(&a->ui);
+        }
+    } else if (m->cmd == CMD_HEARTBEAT) {
+        send_raw(link->fd, CMD_HEARTBEAT_ACK, 0, NULL, 0);
+    }
+    return 0;
+}
+
+static int connect_announced_host(struct app *a, uint32_t ip_n,
+                                  uint16_t port_h, const char *nick,
+                                  uint32_t session)
+{
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    struct sockaddr_in dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.sin_family = AF_INET;
+    dst.sin_addr.s_addr = ip_n;
+    dst.sin_port = htons(port_h);
+    int rc = connect(fd, (struct sockaddr *)&dst, sizeof(dst));
+    if (rc < 0 && errno != EINPROGRESS) {
+        close(fd);
+        return -1;
+    }
+    if (rc < 0) {
+        fd_set wfds;
+        FD_ZERO(&wfds);
+        FD_SET(fd, &wfds);
+        struct timeval tv = { .tv_sec = 1, .tv_usec = 500000 };
+        rc = select(fd + 1, NULL, &wfds, NULL, &tv);
+        int err = 0;
+        socklen_t elen = sizeof(err);
+        if (rc <= 0 || getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &elen) < 0 ||
+            err != 0) {
+            close(fd);
+            return -1;
+        }
+    }
+    struct peer_link *link = add_peer_link(a, fd, nick);
+    if (!link) return -1;
+    uint32_t sid = htonl(session);
+    uint16_t req = ++a->next_req;
+    if (req == 0) req = ++a->next_req;
+    if (send_raw(fd, CMD_MANIFEST_REQ, req, &sid, sizeof(sid)) < 0) {
+        close(fd);
+        link->fd = -1;
+        return -1;
+    }
+    ui_state_lock(&a->ui);
+    a->ui.path_type = PATH_ANNOUNCE;
+    ui_set_status(&a->ui, "已通过通告连接房主，正在索取清单");
+    ui_push_event(&a->ui, "通告发现：已连接 %s:%u", nick, port_h);
+    ui_term_draw(&a->ui);
     ui_state_unlock(&a->ui);
     return 0;
 }
@@ -221,9 +444,15 @@ static int on_room_msg(void *ctx, const struct fa_message *m)
         parse_manifest(a, m->body, m->length);
         break;
     case CMD_PEER_LIST:
-        ui_state_lock(&a->ui);
-        ui_set_status(&a->ui, "收到 PEER_LIST（%u 字节）", m->length);
-        ui_state_unlock(&a->ui);
+        parse_peer_entries(a, m->body, m->length, 1);
+        break;
+    case CMD_ADDR_REPLY:
+        if (m->length >= 16) {
+            uint8_t wrapped[1 + 64];
+            wrapped[0] = 1;
+            memcpy(wrapped + 1, m->body, m->length);
+            parse_peer_entries(a, wrapped, (uint16_t)(m->length + 1), 0);
+        }
         break;
     default:
         log_info("房间报文 cmd=0x%02X len=%u", m->cmd, m->length);
@@ -348,11 +577,59 @@ static void handle_udp(struct app *a)
             a->ui.path_type = PATH_ANNOUNCE;
             ui_set_status(&a->ui, "收到通告 room=%u host=%s:%u nick=%s",
                           room, ip, tp, nick);
+            ui_push_event(&a->ui, "ANNOUNCE：%s room=%u session=%08X",
+                          nick, room, sid);
+            ui_term_draw(&a->ui);
             ui_state_unlock(&a->ui);
+            if (!a->ui.room_online &&
+                (a->announced_host_ip_n != hip ||
+                 a->announced_host_tcp_h != tp ||
+                 a->announced_session != sid)) {
+                a->announced_host_ip_n = hip;
+                a->announced_host_tcp_h = tp;
+                a->announced_session = sid;
+                if (connect_announced_host(a, hip, tp, nick, sid) < 0) {
+                    ui_state_lock(&a->ui);
+                    ui_set_status(&a->ui, "通告房主连接失败 %s:%u", ip, tp);
+                    ui_push_event(&a->ui, "通告连接失败");
+                    ui_term_draw(&a->ui);
+                    ui_state_unlock(&a->ui);
+                }
+            }
         }
     } else if (cmd == CMD_PUNCH) {
-        log_info("收到 PUNCH（第1周仅记录）来自 %s:%u",
-                 inet_ntoa(src.sin_addr), ntohs(src.sin_port));
+        uint32_t sid = 0;
+        uint8_t from = 0, to = 0;
+        if (punch_parse_punch(body, blen, &sid, &from, &to) == 0 &&
+            sid == a->ui.session_id && to == a->ui.my_peer_id) {
+            int authenticated = 0;
+            ui_state_lock(&a->ui);
+            for (int i = 0; i < UI_MAX_PEERS; i++) {
+                const struct ui_peer *p = &a->ui.peers[i];
+                if (p->used && p->peer_id == from &&
+                    ((p->refl_ip_n == src.sin_addr.s_addr &&
+                      p->refl_port_h == ntohs(src.sin_port)) ||
+                     (p->priv_ip_n == src.sin_addr.s_addr &&
+                      p->udp_port_h == ntohs(src.sin_port)))) {
+                    authenticated = 1;
+                    break;
+                }
+            }
+            if (authenticated) {
+                if (from <= UI_MAX_PEERS)
+                    a->punch_ok_peer[from] = 1;
+                if (a->punch_wait_peer == from)
+                    a->punch_wait_peer = 0;
+                a->ui.path_type = PATH_PUNCH;
+                ui_set_status(&a->ui, "与 peer %u 打洞报文互达", from);
+                ui_push_event(&a->ui, "PUNCH 已认证 peer=%u", from);
+                ui_term_draw(&a->ui);
+            }
+            ui_state_unlock(&a->ui);
+            if (authenticated)
+                punch_send_punch(&a->punch, &src, sid,
+                                 a->ui.my_peer_id, from);
+        }
     }
 }
 
@@ -375,6 +652,12 @@ static void *net_thread(void *arg)
         if (a->peer_listen_fd >= 0) {
             FD_SET(a->peer_listen_fd, &rfds);
             if (a->peer_listen_fd > maxfd) maxfd = a->peer_listen_fd;
+        }
+        for (int i = 0; i < MAX_PEER_LINKS; i++) {
+            if (a->links[i].fd >= 0) {
+                FD_SET(a->links[i].fd, &rfds);
+                if (a->links[i].fd > maxfd) maxfd = a->links[i].fd;
+            }
         }
 
         struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
@@ -433,14 +716,33 @@ static void *net_thread(void *arg)
         if (a->punch.fd >= 0 && FD_ISSET(a->punch.fd, &rfds))
             handle_udp(a);
 
+        for (int i = 0; i < MAX_PEER_LINKS; i++) {
+            struct peer_link *link = &a->links[i];
+            if (link->fd < 0 || !FD_ISSET(link->fd, &rfds)) continue;
+            uint8_t buf[4096];
+            ssize_t r = recv(link->fd, buf, sizeof(buf), 0);
+            if (r <= 0) {
+                close(link->fd);
+                link->fd = -1;
+            } else {
+                fa_feed(&link->reader, buf, (size_t)r, on_peer_msg, link);
+            }
+        }
+
         if (a->peer_listen_fd >= 0 && FD_ISSET(a->peer_listen_fd, &rfds)) {
             struct sockaddr_in c;
             socklen_t cl = sizeof(c);
             int cfd = accept(a->peer_listen_fd, (struct sockaddr *)&c, &cl);
             if (cfd >= 0) {
-                log_info("互传监听接到连接（第1周暂不传块）%s:%u",
+                log_info("互传监听接到连接 %s:%u",
                          inet_ntoa(c.sin_addr), ntohs(c.sin_port));
-                close(cfd);
+                if (add_peer_link(a, cfd, "通告玩家")) {
+                    ui_state_lock(&a->ui);
+                    ui_push_event(&a->ui, "互传 TCP 已接入 %s:%u",
+                                  inet_ntoa(c.sin_addr), ntohs(c.sin_port));
+                    ui_term_draw(&a->ui);
+                    ui_state_unlock(&a->ui);
+                }
             }
         }
 
@@ -448,6 +750,18 @@ static void *net_thread(void *arg)
         if (a->room_fd >= 0 && now - a->last_hb >= HEARTBEAT_INTERVAL) {
             send_raw(a->room_fd, CMD_HEARTBEAT, 0, NULL, 0);
             a->last_hb = now;
+        }
+        if (a->punch_wait_peer &&
+            now - a->punch_wait_since >= PUNCH_TIMEOUT_SEC) {
+            uint8_t peer = a->punch_wait_peer;
+            a->punch_wait_peer = 0;
+            ui_state_lock(&a->ui);
+            ui_set_status(&a->ui,
+                          "打洞 %us 未互达 peer=%u（第4周改中继）",
+                          PUNCH_TIMEOUT_SEC, peer);
+            ui_push_event(&a->ui, "PUNCH 超时 peer=%u", peer);
+            ui_term_draw(&a->ui);
+            ui_state_unlock(&a->ui);
         }
     }
     return NULL;
@@ -473,6 +787,54 @@ static void *ui_thread(void *arg)
             wake_send(a, WAKE_PROBE);
         } else if (strncmp(line, "announce", 8) == 0) {
             wake_send(a, WAKE_ANNOUNCE);
+        } else if (strncmp(line, "markhave ", 9) == 0) {
+            unsigned file_id = 0;
+            char source[UI_NICK_MAX + 1] = "test";
+            if (sscanf(line + 9, "%u %16s", &file_id, source) >= 1 &&
+                file_id >= 1 && file_id <= UI_MAX_FILES) {
+                ui_state_lock(&a->ui);
+                if (!a->ui.files[file_id - 1].used) {
+                    uint8_t zhash[32] = {0};
+                    ui_set_file_meta(&a->ui, (uint8_t)file_id,
+                                      (uint8_t)file_id, 2, 0, zhash);
+                }
+                if (ui_set_file_status(&a->ui, (uint8_t)file_id, 1, source) == 0)
+                    ui_push_event(&a->ui, "测试注入：证物%u 来源=%s", file_id, source);
+                else
+                    ui_set_status(&a->ui, "markhave：未知证物 %u", file_id);
+                ui_state_unlock(&a->ui);
+            }
+        } else if (strcmp(line, "next") == 0) {
+            ui_state_lock(&a->ui);
+            if (a->ui.phase == UI_PHASE_CH1 && a->ui.files[0].have) {
+                ui_advance_phase(&a->ui, UI_PHASE_QUIZ);
+                ui_push_event(&a->ui, "第一章完成，进入章间问答");
+            } else if (a->ui.phase == UI_PHASE_CH2 &&
+                       a->ui.files[1].have && a->ui.files[2].have) {
+                ui_advance_phase(&a->ui, UI_PHASE_CHOICE);
+                ui_push_event(&a->ui, "第二章完成，进入三项择一");
+            } else {
+                ui_set_status(&a->ui, "证物尚未齐全，不能推进");
+            }
+            ui_state_unlock(&a->ui);
+        } else if (strncmp(line, "answer ", 7) == 0) {
+            ui_state_lock(&a->ui);
+            if (a->ui.phase == UI_PHASE_QUIZ) {
+                ui_advance_phase(&a->ui, UI_PHASE_CH2);
+                ui_push_event(&a->ui, "问答已提交，进入第二章");
+            } else {
+                ui_set_status(&a->ui, "当前不在问答阶段");
+            }
+            ui_state_unlock(&a->ui);
+        } else if (strncmp(line, "choose ", 7) == 0) {
+            ui_state_lock(&a->ui);
+            if (a->ui.phase == UI_PHASE_CHOICE) {
+                ui_advance_phase(&a->ui, UI_PHASE_DONE);
+                ui_push_event(&a->ui, "选择已提交，本局结束");
+            } else {
+                ui_set_status(&a->ui, "当前不在三项择一阶段");
+            }
+            ui_state_unlock(&a->ui);
         } else if (strncmp(line, "join ", 5) == 0) {
             char nick[UI_NICK_MAX + 1] = {0}, host[128] = "localhost", roleword[32] = {0};
             int n = sscanf(line + 5, "%16s %127s %31s", nick, host, roleword);
@@ -517,6 +879,7 @@ int main(int argc, char **argv)
     a.wake_r = a.wake_w = -1;
     a.role = 2;
     a.next_req = 1;
+    for (int i = 0; i < MAX_PEER_LINKS; i++) a.links[i].fd = -1;
     snprintf(a.room_host, sizeof(a.room_host), "localhost");
     ui_state_init(&a.ui);
 
@@ -545,6 +908,8 @@ int main(int argc, char **argv)
 
     if (a.room_fd >= 0) close(a.room_fd);
     if (a.peer_listen_fd >= 0) close(a.peer_listen_fd);
+    for (int i = 0; i < MAX_PEER_LINKS; i++)
+        if (a.links[i].fd >= 0) close(a.links[i].fd);
     punch_close(&a.punch);
     close(a.wake_r);
     close(a.wake_w);
