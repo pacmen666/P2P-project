@@ -43,3 +43,10 @@ tests/py_test/*.err
 # 素材压缩工具的导出目录（零件本身在 parts_export/，需提交）
 tests/py_test/parts/
 /tests/probe_client_min
+
+/client_transfer
+/relay_transfer
+
+/tests/udp_fault.so
+
+/tests/test_transfer_stream
