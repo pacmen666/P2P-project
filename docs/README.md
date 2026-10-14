@@ -12,9 +12,13 @@
 | `punch_hosts.md` | 提交 | 打洞主机名单表（勿填家庭公网 IP） |
 | `experiment4_sockopts.md` | 提交 | 实验 4 套接字选项汇总（刘维护） |
 | `wsl.md` | 提交 | WSL 构建、自动化测试命令、关房四窗手工流程 |
+| `integration_matrix.md` | 提交 | 四人谁与谁对齐、交付物与完成标准 |
+| `transfer_peng.md` | 提交 | 彭传块交付与联调边界 |
+| `transfer_validation.md` | 提交 | `make test-transfer` 验证记录 |
 | `README.md`（本文件） | 提交 | 可编辑 |
 
-刘侧测试命令索引：`tests/README.md`（脚本明细）、`docs/wsl.md`（WSL 快捷命令）。
+刘侧测试命令索引：`tests/README.md`（脚本明细）、`docs/wsl.md`（WSL 快捷命令）。  
+全组对接索引：`docs/integration_matrix.md`。
 
 ## 规则
 

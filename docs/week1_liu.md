@@ -53,10 +53,14 @@ bash tests/full_liu_smoke.sh
 - 房主 `announce`、已 join 端收 `ANNOUNCE`（路径「通告发现」）
 - 关房后晚进玩家（**peer 0、不 join**）收通告并 TCP `MANIFEST_REQ`：手工四窗流程见 `docs/wsl.md`
 - `next` / `answer` / `choose` 命令骨架；真实局号依赖陈侧 MANIFEST
+- 套接字选项总表：`docs/experiment4_sockopts.md`
+
+**与 `client_transfer`：** `ui_state` / `ui_term` / punch 已被彭复用（`make transfer`）。真传块、HAVE 点亮证物、本网直连/中继路径以 `./client_transfer` 为准。关房通告接收目前只在 `./client`；迁入 transfer 入口见对接矩阵。
 
 ## 仍未做 / 依赖他组
 
 - 真实 GUI（当前为终端板）
-- 完整打洞对发与中继回落（第 4 周）
+- 完整打洞对发、NAT 记录与中继回落（第 4 周；彭 `tr_should_punch` 已有骨架）
 - 房主缓存并下发真实 MANIFEST（陈 + 王侧上传）
-- 案情板来源与互传由彭侧 HAVE/BITFIELD 驱动（非 `markhave`）
+- 案情板来源由彭 HAVE/BITFIELD 驱动（`client_transfer` 已接；`./client` 仍可用 `markhave` 联调）
+- `choose` 选项汇总记录；实验 7 书面环境与实验 9 跨网记录
