@@ -3,7 +3,6 @@
 
 void log_init(const char *path);
 void log_close(void);
-void log_set_console(int enable);
 
 void log_info(const char *fmt, ...);
 void log_error(const char *fmt, ...);
