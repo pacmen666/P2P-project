@@ -150,6 +150,16 @@ announce
 
 ---
 
+## 彭侧传块（`make transfer`）
+
+```bash
+sudo apt-get install -y libssl-dev   # 缺 OpenSSL 时
+make transfer
+make test-transfer
+```
+
+生成 `client_transfer`、`relay_transfer`。手工三端见 [`docs/transfer_peng.md`](../docs/transfer_peng.md)；验证记录见 [`docs/transfer_validation.md`](../docs/transfer_validation.md)。测试会占用 37401、37402、37405，请先关掉旧 `room_server` / `client`。
+
 ## 王侧 / 全组（参考）
 
 ```bash
@@ -158,4 +168,4 @@ make room_server relay_server test_client
 ./test_client    # 按 tests/test_client.c 说明
 ```
 
-刘侧文档：`docs/week1_liu.md`、`docs/experiment4_sockopts.md`。
+刘侧文档：`docs/week1_liu.md`、`docs/experiment4_sockopts.md`、`docs/wsl.md`。

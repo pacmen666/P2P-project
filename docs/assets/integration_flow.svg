@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="720" viewBox="0 0 1160 720">
+  <defs>
+    <filter id="node-shadow" x="-15%" y="-15%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+    <filter id="pill-shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+    <marker id="arr-blue" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto">
+      <path d="M0,0.5 L8.5,4.5 L0,8.5 Z" fill="#2B6CB0"/>
+    </marker>
+    <marker id="arr-green" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto">
+      <path d="M0,0.5 L8.5,4.5 L0,8.5 Z" fill="#2F855A"/>
+    </marker>
+    <marker id="arr-orange" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto">
+      <path d="M0,0.5 L8.5,4.5 L0,8.5 Z" fill="#C05621"/>
+    </marker>
+    <marker id="arr-purple" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto">
+      <path d="M0,0.5 L8.5,4.5 L0,8.5 Z" fill="#6B46C1"/>
+    </marker>
+  </defs>
+
+  <rect width="1160" height="720" fill="#F8FAFC"/>
+
+  <!-- ================= 连接线（全部正交直线，按交付方配色） ================= -->
+  <g fill="none" stroke-width="2.4" stroke-linecap="square" stroke-linejoin="miter">
+    <!-- 1. 陈 -> 彭（上方独立通道 y=96，不穿过王） -->
+    <path d="M 190 198 L 190 96 L 970 96 L 970 198" stroke="#2B6CB0" marker-end="url(#arr-blue)"/>
+
+    <!-- 2. 陈 -> 王（主链水平 y=242） -->
+    <path d="M 270 242 L 494 242" stroke="#2B6CB0" marker-end="url(#arr-blue)"/>
+
+    <!-- 3. 王 -> 彭（主链水平 y=242） -->
+    <path d="M 660 242 L 884 242" stroke="#2F855A" marker-end="url(#arr-green)"/>
+
+    <!-- 4. 陈 -> 刘（左侧外道 x=140 -> y=580） -->
+    <path d="M 140 286 L 140 580 L 494 580" stroke="#2B6CB0" marker-end="url(#arr-blue)"/>
+
+    <!-- 5. 王 -> 刘（中左竖道 x=545 向下） -->
+    <path d="M 545 286 L 545 530" stroke="#2F855A" marker-end="url(#arr-green)"/>
+
+    <!-- 6. 刘 -> 王（中右竖道 x=615 向上） -->
+    <path d="M 615 536 L 615 292" stroke="#6B46C1" marker-end="url(#arr-purple)"/>
+
+    <!-- 7. 彭 -> 刘（内侧折线 x=930 -> y=468 -> 刘右侧上沿 y=556） -->
+    <path d="M 930 286 L 930 468 L 740 468 L 740 556 L 666 556" stroke="#C05621" marker-end="url(#arr-orange)"/>
+
+    <!-- 8. 刘 -> 彭（外侧折线 刘右侧下沿 y=604 -> x=1015 向上） -->
+    <path d="M 660 604 L 1015 604 L 1015 292" stroke="#6B46C1" marker-end="url(#arr-purple)"/>
+  </g>
+
+  <!-- ================= 边标签（独立车道，零遮挡、零重叠） ================= -->
+  <g font-family="'Microsoft YaHei','PingFang SC','Segoe UI',sans-serif" font-size="13" font-weight="600" text-anchor="middle">
+    <!-- 1. 陈 -> 彭 (y=96) -->
+    <g filter="url(#pill-shadow)">
+      <rect x="445" y="79" width="270" height="34" rx="8" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.5"/>
+      <text x="580" y="101" fill="#1E3A8A">陈 → 彭：分块哈希 · session 目录</text>
+    </g>
+
+    <!-- 2. 陈 -> 王 (x=382, y=242) -->
+    <g filter="url(#pill-shadow)">
+      <rect x="284" y="186" width="196" height="34" rx="8" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.5"/>
+      <text x="382" y="208" fill="#1E3A8A">陈 → 王：MANIFEST 清单</text>
+    </g>
+
+    <!-- 3. 王 -> 彭 (x=772, y=242) -->
+    <g filter="url(#pill-shadow)">
+      <rect x="668" y="186" width="208" height="34" rx="8" fill="#FFFFFF" stroke="#86EFAC" stroke-width="1.5"/>
+      <text x="772" y="208" fill="#14532D">王 → 彭：名单 · 反射 · 中继</text>
+    </g>
+
+    <!-- 4. 陈 -> 刘 (左侧水平段 y=580) -->
+    <g filter="url(#pill-shadow)">
+      <rect x="186" y="563" width="256" height="34" rx="8" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.5"/>
+      <text x="314" y="585" fill="#1E3A8A">陈 → 刘：局号 · 问答 / 择一规则</text>
+    </g>
+
+    <!-- 5. 王 -> 刘 (中左竖线 x=545，标签置于左侧附着 x=415, y=378) -->
+    <line x1="525" y1="378" x2="545" y2="378" stroke="#2F855A" stroke-width="1.8" stroke-dasharray="3,3"/>
+    <circle cx="545" cy="378" r="3.5" fill="#2F855A"/>
+    <g filter="url(#pill-shadow)">
+      <rect x="265" y="361" width="260" height="34" rx="8" fill="#FFFFFF" stroke="#86EFAC" stroke-width="1.5"/>
+      <text x="395" y="383" fill="#14532D">王 → 刘：JOIN · 名单 · 关房清单</text>
+    </g>
+
+    <!-- 6. 刘 -> 王 (中右竖线 x=615，标签置于右侧附着 y=378) -->
+    <line x1="615" y1="378" x2="635" y2="378" stroke="#6B46C1" stroke-width="1.8" stroke-dasharray="3,3"/>
+    <circle cx="615" cy="378" r="3.5" fill="#6B46C1"/>
+    <g filter="url(#pill-shadow)">
+      <rect x="635" y="361" width="262" height="34" rx="8" fill="#FFFFFF" stroke="#C4B5FD" stroke-width="1.5"/>
+      <text x="766" y="383" fill="#4C1D95">刘 → 王：通告 · 晚进 MANIFEST_REQ</text>
+    </g>
+
+    <!-- 7. 彭 -> 刘 (y=468 水平段) -->
+    <g filter="url(#pill-shadow)">
+      <rect x="716" y="451" width="238" height="34" rx="8" fill="#FFFFFF" stroke="#FDBA74" stroke-width="1.5"/>
+      <text x="835" y="473" fill="#7C2D12">彭 → 刘：HAVE · 路径 · get 传块</text>
+    </g>
+
+    <!-- 8. 刘 -> 彭 (y=604 底部水平段) -->
+    <g filter="url(#pill-shadow)">
+      <rect x="710" y="587" width="268" height="34" rx="8" fill="#FFFFFF" stroke="#C4B5FD" stroke-width="1.5"/>
+      <text x="844" y="609" fill="#4C1D95">刘 → 彭：打洞 UDP · announce 同 fd</text>
+    </g>
+  </g>
+
+  <!-- ================= 四人节点卡片 ================= -->
+  <g font-family="'Microsoft YaHei','PingFang SC','Segoe UI',sans-serif" text-anchor="middle" filter="url(#node-shadow)">
+    <!-- 陈 (cx=190, cy=242, w=160, h=88) -->
+    <g>
+      <rect x="110" y="198" width="160" height="88" rx="14" fill="#EFF6FF" stroke="#2B6CB0" stroke-width="2.5"/>
+      <text x="190" y="236" font-size="24" font-weight="700" fill="#1E3A8A">陈</text>
+      <text x="190" y="264" font-size="13" font-weight="500" fill="#475569">案卷 · 清单 · 哈希</text>
+    </g>
+
+    <!-- 王 (cx=580, cy=242, w=160, h=88) -->
+    <g>
+      <rect x="500" y="198" width="160" height="88" rx="14" fill="#F0FDF4" stroke="#2F855A" stroke-width="2.5"/>
+      <text x="580" y="236" font-size="24" font-weight="700" fill="#14532D">王</text>
+      <text x="580" y="264" font-size="13" font-weight="500" fill="#475569">Tracker · 中继服务</text>
+    </g>
+
+    <!-- 彭 (cx=970, cy=242, w=160, h=88) -->
+    <g>
+      <rect x="890" y="198" width="160" height="88" rx="14" fill="#FFF7ED" stroke="#C05621" stroke-width="2.5"/>
+      <text x="970" y="236" font-size="24" font-weight="700" fill="#7C2D12">彭</text>
+      <text x="970" y="264" font-size="13" font-weight="500" fill="#475569">transfer · 分片互传</text>
+    </g>
+
+    <!-- 刘 (cx=580, cy=580, w=160, h=88) -->
+    <g>
+      <rect x="500" y="536" width="160" height="88" rx="14" fill="#F5F3FF" stroke="#6B46C1" stroke-width="2.5"/>
+      <text x="580" y="574" font-size="24" font-weight="700" fill="#4C1D95">刘</text>
+      <text x="580" y="602" font-size="13" font-weight="500" fill="#475569">UI · 通告 · 打洞客户端</text>
+    </g>
+  </g>
+</svg>

@@ -1,16 +1,20 @@
 # src/ui/
 
-界面线程与第 1 周客户端入口。不在网络套接字上直接读写；操作时向唤醒通道写 1 字节。
+界面线程与终端案情板。不在网络套接字上直接读写；操作时向唤醒通道写 1 字节。房间表与证物状态须加锁。
 
-## 本周文件
+## 文件
 
 | 文件 | 作用 |
 |------|------|
-| `ui_state.c` | 局号、昵称、成员、三文件摘要前缀、路径类型（**无种子字段**） |
-| `ui_term.c` | 终端案情板 |
-| `client_main.c` | 进房、心跳、收 MANIFEST、对接 punch、select + 唤醒 |
+| `ui_state.c` | 局号、昵称、成员、三文件摘要前缀、已有/缺失/来源、路径类型（**无种子字段**） |
+| `ui_term.c` | 终端案情板；`./client` 与 `client_transfer` 共用 |
+| `client_main.c` | 刘侧入口 `./client`：进房、PEER_LIST、PROBE、ANNOUNCE、关房后 MANIFEST_REQ、PUNCH 骨架、`markhave` / `next` / `answer` / `choose` |
 
-构建：仓库根 `make client` → `./client`（Linux / WSL）。说明见 `docs/week1_liu.md`、`docs/wsl.md`。
+构建：仓库根 `make client` → `./client`（Linux / WSL）。传块联调入口是 `make transfer` → `./client_transfer`（`src/transfer/client_main.c` 复用本目录 `ui_state` / `ui_term`）。说明见 `docs/week1_liu.md`、`docs/wsl.md`。
+
+## 路径文案（约定四类）
+
+`PATH_LAN_TCP` 本网直连、`PATH_PUNCH` 打洞、`PATH_RELAY` 中继、`PATH_ANNOUNCE` 通告发现。刘侧 `./client` 主要置 `PATH_ANNOUNCE` / `PATH_PUNCH`；本网直连与中继由 `client_transfer` 写入 `ui->path_type`。
 
 ## 规则
 
