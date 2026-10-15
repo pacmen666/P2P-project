@@ -110,7 +110,6 @@ static int test_join(int fd, uint8_t role, const char *nick)
     return -1;
 }
 
-/* 单独处理 PEER_LIST */
 static void test_peer_list(int fd)
 {
     struct v1_header h;
@@ -236,17 +235,49 @@ static void test_relay(int fd, uint8_t peer_id, uint16_t room_id)
     printf("已发送 RELAY_BIND：peer_id=%u, room_id=%u\n", peer_id, room_id);
 }
 
+/* ---------- 第 3 周：测试 RELAY_WRAP 转发 ---------- */
+static void test_relay_wrap(int fd, uint8_t src_id, uint8_t dst_id)
+{
+    /* 内层：一条完整的 v1 报文，用 ERROR 做占位 */
+    uint8_t inner_body[2] = { 0x00, 0x01 };
+    struct v1_header ih;
+    ih.magic    = htons(V1_MAGIC);
+    ih.ver      = V1_VERSION;
+    ih.cmd      = CMD_ERROR;
+    ih.req_id   = htons(99);
+    ih.body_len = htons(2);
+
+    uint8_t inner[8 + 2];
+    memcpy(inner, &ih, 8);
+    memcpy(inner + 8, inner_body, 2);
+
+    /* 外层：RELAY_WRAP */
+    uint16_t inner_len = sizeof(inner);
+    uint8_t body[4 + 256];
+    body[0] = dst_id;
+    body[1] = src_id;
+    body[2] = (inner_len >> 8) & 0xFF;
+    body[3] = inner_len & 0xFF;
+    memcpy(body + 4, inner, inner_len);
+
+    send_packet(fd, CMD_RELAY_WRAP, 7, body, 4 + inner_len);
+    printf("已发送 RELAY_WRAP：src=%u, dst=%u, inner_len=%u\n",
+           src_id, dst_id, inner_len);
+}
+
 int main(int argc, char *argv[])
 {
     const char *room_ip  = "127.0.0.1";
     const char *relay_ip = "127.0.0.1";
     uint8_t role = 2;
     const char *nick = "Alice";
+    uint8_t dst_id = 1;   /* RELAY_WRAP 目标，默认 1 */
 
     if (argc >= 2) room_ip  = argv[1];
     if (argc >= 3) relay_ip = argv[2];
     if (argc >= 4) role     = atoi(argv[3]);
     if (argc >= 5) nick     = argv[4];
+    if (argc >= 6) dst_id   = atoi(argv[5]);
 
     log_init("logs/test_client.log");
     log_info("测试客户端启动：room=%s, relay=%s, role=%u, nick=%s",
@@ -261,12 +292,9 @@ int main(int argc, char *argv[])
 
     int my_id = test_join(fd, role, nick);
 
-    /* 房间服务在 JOIN_OK 后立即推 PEER_LIST */
     test_peer_list(fd);
-
     test_heartbeat(fd);
     test_addr_query(fd, 1);
-
     test_probe(room_ip, my_id);
 
     int rfd = connect_to(relay_ip, PORT_RELAY_TCP);
@@ -276,8 +304,14 @@ int main(int argc, char *argv[])
     }
     printf("已连接中继服务 %s:%d\n", relay_ip, PORT_RELAY_TCP);
     test_relay(rfd, my_id, 1);
-    close(rfd);
+    sleep(3);
+    test_relay_wrap(rfd, my_id, dst_id);
 
+    /* 等对方也收到转发，再关闭 */
+    printf("等待 10 秒，让对方也发 RELAY_WRAP...\n");
+    sleep(10);
+
+    close(rfd);
     printf("保持在线 30 秒...\n");
     sleep(30);
 
