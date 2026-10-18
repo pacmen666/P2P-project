@@ -35,6 +35,11 @@ struct temp_relay {
 static struct relay_bind  g_bind_table[MAX_RELAY_CLIENTS];
 static struct temp_relay  g_relay_temps[MAX_RELAY_CLIENTS];
 
+/* ---------- 函数前置声明（防止 C 语言编译顺序报错） ---------- */
+static void handle_relay_bound_data(int fd);
+
+/* ---------- 工具函数 ---------- */
+
 static void send_all(int fd, const void *buf, int len)
 {
     const char *p = (const char *)buf;
@@ -71,7 +76,10 @@ static void send_error(int fd, uint16_t req_id, uint16_t err)
 static int is_peer_in_room(uint8_t peer_id)
 {
     FILE *fp = fopen(ROOM_PEERS_FILE, "r");
-    if (!fp) return 0;
+    if (!fp) {
+        log_error("无法打开房间名单文件 %s", ROOM_PEERS_FILE);
+        return 0;
+    }
     char line[32];
     int found = 0;
     while (fgets(line, sizeof(line), fp)) {
@@ -122,6 +130,8 @@ static struct relay_bind *find_bind_by_fd(int fd)
     return NULL;
 }
 
+/* ---------- 处理 RELAY_WRAP ---------- */
+
 static void handle_relay_wrap(int fd, uint16_t req_id,
                               const uint8_t *body, uint16_t body_len)
 {
@@ -146,10 +156,12 @@ static void handle_relay_wrap(int fd, uint16_t req_id,
     uint8_t  src_id    = body[1];
     uint16_t inner_len = (body[2] << 8) | body[3];
 
-    log_info("收到 RELAY_WRAP：src=%u, dst=%u, inner_len=%u", src_id, dst_id, inner_len);
+    log_info("收到 RELAY_WRAP：src=%u, dst=%u, inner_len=%u",
+             src_id, dst_id, inner_len);
 
     if (body_len != 4 + inner_len || inner_len < 8) {
-        log_error("RELAY_WRAP 长度不一致：body_len=%u, inner_len=%u", body_len, inner_len);
+        log_error("RELAY_WRAP 长度不一致：body_len=%u, inner_len=%u",
+                  body_len, inner_len);
         send_error(fd, req_id, ERR_WRAP_LEN);
         close(fd);
         relay_bind_remove(fd);
@@ -157,7 +169,8 @@ static void handle_relay_wrap(int fd, uint16_t req_id,
     }
 
     if (src_id != src->peer_id) {
-        log_error("RELAY_WRAP 身份不符：src_id=%u, 连接登记=%u", src_id, src->peer_id);
+        log_error("RELAY_WRAP 身份不符：src_id=%u, 连接登记=%u",
+                  src_id, src->peer_id);
         send_error(fd, req_id, ERR_RELAY_ID);
         close(fd);
         relay_bind_remove(fd);
@@ -179,8 +192,12 @@ static void handle_relay_wrap(int fd, uint16_t req_id,
     memcpy(out_body + 4, body + 4, inner_len);
 
     send_header_and_body(dst->fd, CMD_RELAY_WRAP, 0, out_body, 4 + inner_len);
-    log_info("转发 RELAY_WRAP：src=%u -> dst=%u, inner_len=%u", src_id, dst_id, inner_len);
+
+    log_info("转发 RELAY_WRAP：src=%u -> dst=%u, inner_len=%u",
+             src_id, dst_id, inner_len);
 }
+
+/* ---------- 处理一条完整报文 ---------- */
 
 static void handle_packet(int fd, struct v1_header *h, const uint8_t *body)
 {
@@ -197,7 +214,8 @@ static void handle_packet(int fd, struct v1_header *h, const uint8_t *body)
     }
 }
 
-/* 核心：临时连接（处理 BIND 和 粘包） */
+/* ---------- 处理临时连接数据 ---------- */
+
 static void handle_relay_temp_data(int fd)
 {
     struct temp_relay *t = NULL;
@@ -217,9 +235,6 @@ static void handle_relay_temp_data(int fd)
         return;
     }
     t->rxlen += r;
-    
-    // 【照妖镜 1】看看一次读到了多少字节
-    log_info("临时连接 fd=%d 收到 %d 字节，当前总长 %d", fd, r, t->rxlen);
 
     while (t->rxlen >= 8) {
         struct v1_header *h = (struct v1_header *)t->rxbuf;
@@ -237,6 +252,8 @@ static void handle_relay_temp_data(int fd)
         if (h->cmd == CMD_RELAY_BIND) {
             uint8_t  peer_id = t->rxbuf[8];
             uint16_t room_id = (t->rxbuf[9] << 8) | t->rxbuf[10];
+
+            log_info("收到 RELAY_BIND：peer_id=%u, room_id=%u", peer_id, room_id);
 
             if (room_id != 1 || !is_peer_in_room(peer_id)) {
                 log_error("RELAY_BIND 校验失败：peer_id=%u, room_id=%u", peer_id, room_id);
@@ -271,21 +288,17 @@ static void handle_relay_temp_data(int fd)
             b->fd = fd;
             log_info("绑定成功：peer_id=%u -> fd=%d", peer_id, fd);
 
-            // 【照妖镜 2】看看移交了多少剩余数据
             b->rxlen = t->rxlen - (8 + blen);
-            log_info("移交剩余数据长度：%d", b->rxlen);
             if (b->rxlen > 0) {
                 memcpy(b->rxbuf, t->rxbuf + 8 + blen, b->rxlen);
+                log_info("移交剩余数据长度：%d", b->rxlen);
             }
 
             relay_temp_remove(fd);
             
-            // 【照妖镜 3】看是不是执行到了这里
-            log_info("准备立刻处理剩余数据...");
             if (b->rxlen > 0) {
                 handle_relay_bound_data(fd);
             }
-            log_info("处理完成，退出临时循环。");
             return;
 
         } else {
@@ -297,7 +310,8 @@ static void handle_relay_temp_data(int fd)
     }
 }
 
-/* 核心：正式连接（接收 WRAP） */
+/* ---------- 处理已绑定连接数据 ---------- */
+
 static void handle_relay_bound_data(int fd)
 {
     struct relay_bind *b = find_bind_by_fd(fd);
@@ -306,6 +320,7 @@ static void handle_relay_bound_data(int fd)
     if (b->rxlen < sizeof(b->rxbuf)) {
         int r = recv(fd, b->rxbuf + b->rxlen, sizeof(b->rxbuf) - b->rxlen, 0);
         if (r <= 0) {
+            log_info("中继连接断开：fd=%d", fd);
             close(fd);
             relay_bind_remove(fd);
             return;
@@ -317,6 +332,7 @@ static void handle_relay_bound_data(int fd)
         struct v1_header *h = (struct v1_header *)b->rxbuf;
 
         if (ntohs(h->magic) != V1_MAGIC || h->ver != V1_VERSION) {
+            log_error("magic/ver 错误，关闭 fd=%d", fd);
             close(fd);
             relay_bind_remove(fd);
             return;
@@ -335,6 +351,8 @@ static void handle_relay_bound_data(int fd)
     }
 }
 
+/* ---------- main ---------- */
+
 int main(void)
 {
     log_init("logs/relay.log");
@@ -352,8 +370,12 @@ int main(void)
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port        = htons(PORT_RELAY_TCP);
 
-    if (bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) { perror("bind"); return 1; }
-    if (listen(listen_fd, 10) < 0) { perror("listen"); return 1; }
+    if (bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("bind"); return 1;
+    }
+    if (listen(listen_fd, 10) < 0) {
+        perror("listen"); return 1;
+    }
     log_info("中继 TCP 监听 0.0.0.0:%d", PORT_RELAY_TCP);
 
     while (1) {
@@ -376,25 +398,29 @@ int main(void)
         }
 
         int n = select(maxfd + 1, &rfds, NULL, NULL, NULL);
-        if (n < 0) { break; }
+        if (n < 0) { perror("select"); break; }
 
         if (FD_ISSET(listen_fd, &rfds)) {
             struct sockaddr_in caddr;
             socklen_t clen = sizeof(caddr);
             int cfd = accept(listen_fd, (struct sockaddr *)&caddr, &clen);
             if (cfd >= 0) {
-                log_info("新中继连接：%s:%d", inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
+                log_info("新中继连接：%s:%d",
+                         inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
                 int placed = 0;
                 for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
                     if (!g_relay_temps[i].used) {
-                        g_relay_temps[i].used = 1;
-                        g_relay_temps[i].fd = cfd;
+                        g_relay_temps[i].used  = 1;
+                        g_relay_temps[i].fd    = cfd;
                         g_relay_temps[i].rxlen = 0;
                         placed = 1;
                         break;
                     }
                 }
-                if (!placed) close(cfd);
+                if (!placed) {
+                    log_error("临时中继连接表已满，关闭 fd=%d", cfd);
+                    close(cfd);
+                }
             }
         }
 
@@ -410,5 +436,7 @@ int main(void)
             handle_relay_bound_data(g_bind_table[i].fd);
         }
     }
+
+    log_close();
     return 0;
 }
