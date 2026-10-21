@@ -14,14 +14,13 @@
 #include <arpa/inet.h>
 
 #define MAX_RELAY_CLIENTS 16
-#define BUF_SIZE          4096
+#define BUF_SIZE          32768 
 #define ROOM_PEERS_FILE   "/tmp/room_peers.txt"
 
 struct relay_bind {
     uint8_t peer_id;
     int     fd;
     int     used;
-
     uint8_t rxbuf[BUF_SIZE];
     int     rxlen;
 };
@@ -35,6 +34,9 @@ struct temp_relay {
 
 static struct relay_bind  g_bind_table[MAX_RELAY_CLIENTS];
 static struct temp_relay  g_relay_temps[MAX_RELAY_CLIENTS];
+
+/* ---------- 函数前置声明（防止 C 语言编译顺序报错） ---------- */
+static void handle_relay_bound_data(int fd);
 
 /* ---------- 工具函数 ---------- */
 
@@ -128,63 +130,11 @@ static struct relay_bind *find_bind_by_fd(int fd)
     return NULL;
 }
 
-/* ---------- 处理 RELAY_BIND ---------- */
-
-static void handle_relay_bind(int fd, uint16_t req_id,
-                              const uint8_t *body, uint16_t body_len)
-{
-    if (body_len < 3) {
-        log_error("RELAY_BIND 正文太短");
-        send_error(fd, req_id, ERR_BODY_LEN);
-        return;
-    }
-
-    uint8_t  peer_id = body[0];
-    uint16_t room_id = (body[1] << 8) | body[2];
-
-    log_info("收到 RELAY_BIND：peer_id=%u, room_id=%u", peer_id, room_id);
-
-    if (!is_peer_in_room(peer_id)) {
-        log_error("RELAY_BIND 身份不符：peer_id=%u 不在房间名单", peer_id);
-        send_error(fd, req_id, ERR_RELAY_ID);
-        close(fd);
-        relay_temp_remove(fd);
-        return;
-    }
-
-    for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
-        if (g_bind_table[i].used && g_bind_table[i].peer_id == peer_id) {
-            log_info("peer_id=%u 重新绑定，关闭旧连接 fd=%d",
-                     peer_id, g_bind_table[i].fd);
-            close(g_bind_table[i].fd);
-            g_bind_table[i].used = 0;
-        }
-    }
-
-    relay_temp_remove(fd);
-
-    for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
-        if (!g_bind_table[i].used) {
-            g_bind_table[i].used    = 1;
-            g_bind_table[i].peer_id = peer_id;
-            g_bind_table[i].fd      = fd;
-            g_bind_table[i].rxlen   = 0;
-            log_info("绑定成功：peer_id=%u -> fd=%d", peer_id, fd);
-            return;
-        }
-    }
-
-    log_error("绑定表已满，无法记录 peer_id=%u", peer_id);
-    send_error(fd, req_id, ERR_RELAY_ID);
-    close(fd);
-}
-
-/* ---------- 处理 RELAY_WRAP（第 3 周转发） ---------- */
+/* ---------- 处理 RELAY_WRAP ---------- */
 
 static void handle_relay_wrap(int fd, uint16_t req_id,
                               const uint8_t *body, uint16_t body_len)
 {
-    /* 1. 找发送方身份 */
     struct relay_bind *src = find_bind_by_fd(fd);
     if (!src) {
         log_error("RELAY_WRAP 来自未绑定连接 fd=%d", fd);
@@ -194,7 +144,6 @@ static void handle_relay_wrap(int fd, uint16_t req_id,
         return;
     }
 
-    /* 2. 校验正文长度 */
     if (body_len < 4) {
         log_error("RELAY_WRAP 正文太短");
         send_error(fd, req_id, ERR_WRAP_LEN);
@@ -210,7 +159,6 @@ static void handle_relay_wrap(int fd, uint16_t req_id,
     log_info("收到 RELAY_WRAP：src=%u, dst=%u, inner_len=%u",
              src_id, dst_id, inner_len);
 
-    /* 3. 校验长度 */
     if (body_len != 4 + inner_len || inner_len < 8) {
         log_error("RELAY_WRAP 长度不一致：body_len=%u, inner_len=%u",
                   body_len, inner_len);
@@ -220,7 +168,6 @@ static void handle_relay_wrap(int fd, uint16_t req_id,
         return;
     }
 
-    /* 4. 校验 src_id 与 BIND 登记一致 */
     if (src_id != src->peer_id) {
         log_error("RELAY_WRAP 身份不符：src_id=%u, 连接登记=%u",
                   src_id, src->peer_id);
@@ -230,17 +177,14 @@ static void handle_relay_wrap(int fd, uint16_t req_id,
         return;
     }
 
-    /* 5. 找目标 */
     struct relay_bind *dst = find_bind_by_peer(dst_id);
     if (!dst) {
         log_error("RELAY_WRAP 目标未绑定：dst_id=%u", dst_id);
         send_error(fd, req_id, ERR_RELAY_UNAVAIL);
-        /* 不关闭发送方，目标未上线可再试 */
         return;
     }
 
-    /* 6. 重新构造 RELAY_WRAP，转发给目标 */
-    uint8_t out_body[4 + 4096];
+    uint8_t out_body[4 + 32768];
     out_body[0] = dst_id;
     out_body[1] = src_id;
     out_body[2] = (inner_len >> 8) & 0xFF;
@@ -260,9 +204,6 @@ static void handle_packet(int fd, struct v1_header *h, const uint8_t *body)
     uint16_t req_id = ntohs(h->req_id);
 
     switch (h->cmd) {
-        case CMD_RELAY_BIND:
-            handle_relay_bind(fd, req_id, body, ntohs(h->body_len));
-            break;
         case CMD_RELAY_WRAP:
             handle_relay_wrap(fd, req_id, body, ntohs(h->body_len));
             break;
@@ -273,7 +214,7 @@ static void handle_packet(int fd, struct v1_header *h, const uint8_t *body)
     }
 }
 
-/* ---------- 处理临时连接数据（读状态机） ---------- */
+/* ---------- 处理临时连接数据 ---------- */
 
 static void handle_relay_temp_data(int fd)
 {
@@ -309,38 +250,83 @@ static void handle_relay_temp_data(int fd)
         if (t->rxlen < 8 + blen) break;
 
         if (h->cmd == CMD_RELAY_BIND) {
-            handle_relay_bind(fd, ntohs(h->req_id), t->rxbuf + 8, blen);
+            uint8_t  peer_id = t->rxbuf[8];
+            uint16_t room_id = (t->rxbuf[9] << 8) | t->rxbuf[10];
+
+            log_info("收到 RELAY_BIND：peer_id=%u, room_id=%u", peer_id, room_id);
+
+            if (room_id != 1 || !is_peer_in_room(peer_id)) {
+                log_error("RELAY_BIND 校验失败：peer_id=%u, room_id=%u", peer_id, room_id);
+                send_error(fd, ntohs(h->req_id), ERR_RELAY_ID);
+                close(fd);
+                relay_temp_remove(fd);
+                return;
+            }
+
+            for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
+                if (g_bind_table[i].used && g_bind_table[i].peer_id == peer_id) {
+                    log_info("peer_id=%u 重新绑定，关闭旧连接 fd=%d", peer_id, g_bind_table[i].fd);
+                    close(g_bind_table[i].fd);
+                    g_bind_table[i].used = 0;
+                }
+            }
+
+            int slot = -1;
+            for (int i = 0; i < MAX_RELAY_CLIENTS; i++) {
+                if (!g_bind_table[i].used) { slot = i; break; }
+            }
+            if (slot < 0) {
+                log_error("绑定表已满，关闭 fd=%d", fd);
+                close(fd);
+                relay_temp_remove(fd);
+                return;
+            }
+
+            struct relay_bind *b = &g_bind_table[slot];
+            b->used = 1;
+            b->peer_id = peer_id;
+            b->fd = fd;
+            log_info("绑定成功：peer_id=%u -> fd=%d", peer_id, fd);
+
+            b->rxlen = t->rxlen - (8 + blen);
+            if (b->rxlen > 0) {
+                memcpy(b->rxbuf, t->rxbuf + 8 + blen, b->rxlen);
+                log_info("移交剩余数据长度：%d", b->rxlen);
+            }
+
+            relay_temp_remove(fd);
+            
+            if (b->rxlen > 0) {
+                handle_relay_bound_data(fd);
+            }
+            return;
+
         } else {
-            log_error("临时中继连接收到非 RELAY_BIND 指令 0x%02X，关闭 fd=%d",
-                      h->cmd, fd);
+            log_error("临时中继连接收到非 RELAY_BIND 指令 0x%02X", h->cmd);
             close(fd);
             relay_temp_remove(fd);
             return;
         }
-
-        int consumed = 8 + blen;
-        memmove(t->rxbuf, t->rxbuf + consumed, t->rxlen - consumed);
-        t->rxlen -= consumed;
-
-        if (!t->used) return;
     }
 }
 
-/* ---------- 处理已绑定连接数据（读状态机） ---------- */
+/* ---------- 处理已绑定连接数据 ---------- */
 
 static void handle_relay_bound_data(int fd)
 {
     struct relay_bind *b = find_bind_by_fd(fd);
     if (!b) return;
 
-    int r = recv(fd, b->rxbuf + b->rxlen, sizeof(b->rxbuf) - b->rxlen, 0);
-    if (r <= 0) {
-        log_info("中继连接断开：fd=%d", fd);
-        close(fd);
-        relay_bind_remove(fd);
-        return;
+    if (b->rxlen < sizeof(b->rxbuf)) {
+        int r = recv(fd, b->rxbuf + b->rxlen, sizeof(b->rxbuf) - b->rxlen, 0);
+        if (r <= 0) {
+            log_info("中继连接断开：fd=%d", fd);
+            close(fd);
+            relay_bind_remove(fd);
+            return;
+        }
+        b->rxlen += r;
     }
-    b->rxlen += r;
 
     while (b->rxlen >= 8) {
         struct v1_header *h = (struct v1_header *)b->rxbuf;
