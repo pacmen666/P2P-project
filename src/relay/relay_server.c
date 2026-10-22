@@ -35,6 +35,9 @@ struct temp_relay {
 static struct relay_bind  g_bind_table[MAX_RELAY_CLIENTS];
 static struct temp_relay  g_relay_temps[MAX_RELAY_CLIENTS];
 
+/* 【新增】全局统计：中继转发的证物数据字节数 */
+static uint64_t g_relay_bytes = 0;
+
 /* ---------- 函数前置声明（防止 C 语言编译顺序报错） ---------- */
 static void handle_relay_bound_data(int fd);
 
@@ -193,8 +196,13 @@ static void handle_relay_wrap(int fd, uint16_t req_id,
 
     send_header_and_body(dst->fd, CMD_RELAY_WRAP, 0, out_body, 4 + inner_len);
 
-    log_info("转发 RELAY_WRAP：src=%u -> dst=%u, inner_len=%u",
-             src_id, dst_id, inner_len);
+    /* 【新增】累加证物数据字节（扣除内层 8 字节报文头） */
+    if (inner_len > 8) {
+        g_relay_bytes += (inner_len - 8);
+    }
+
+    log_info("转发 RELAY_WRAP：src=%u -> dst=%u, inner_len=%u, 累计中继证物字节=%llu",
+             src_id, dst_id, inner_len, (unsigned long long)g_relay_bytes);
 }
 
 /* ---------- 处理一条完整报文 ---------- */
