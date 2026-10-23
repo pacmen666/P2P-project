@@ -22,9 +22,28 @@ test_client: tests/test_client.c src/common/log.c src/common/config.c include/co
 
 # 清理
 clean:
-	rm -f room_server relay_server test_client
+	rm -f room_server relay_server test_client client_transfer relay_transfer
 
 # 重新编译
 re: clean all
 
-.PHONY: all clean re
+# ---- 第4周：分块传输（彭）+ 中继适配层（王）。
+# client_transfer 是陈的实验 8/9 统计口径采集入口（TRANSFER_STATS 行含 total_up/elapsed/hash_reject）。 ----
+TRANSFER_OBJS = src/transfer/client_main.c src/transfer/transfer.c src/generate/generate.c \
+                src/punch/udp_sock.c src/ui/ui_state.c src/ui/ui_term.c \
+                src/common/fa_stream.c src/common/log.c
+TRANSFER_HDRS = include/common.h include/fa_stream.h include/punch.h include/log.h include/ui_state.h \
+                src/transfer/transfer.h src/generate/generate.h
+
+client_transfer: $(TRANSFER_OBJS) $(TRANSFER_HDRS)
+	$(CC) $(CFLAGS) -Isrc/generate -Isrc/transfer -pthread $(TRANSFER_OBJS) -lcrypto -o $@
+
+relay_transfer: src/relay/relay_forward.c src/common/fa_stream.c include/common.h include/fa_stream.h
+	$(CC) $(CFLAGS) src/relay/relay_forward.c src/common/fa_stream.c -o $@
+
+transfer: client_transfer relay_transfer
+
+test-transfer: transfer
+	python3 tests/test_transfer.py
+
+.PHONY: all clean re transfer test-transfer

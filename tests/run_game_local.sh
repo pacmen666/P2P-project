@@ -52,12 +52,20 @@ if command -v tmux >/dev/null 2>&1; then
   echo "退出整局： tmux kill-session -t frag"
   tmux attach -t frag
 else
-  echo "未检测到 tmux，退化为后台启动（房间 + 房主）。"
+  echo "未检测到 tmux，退化为后台启动（房间 + 房主 + 侦探A），跑完自动统计生图。"
   ./room_server >logs/room_run.log 2>&1 &
-  ./client_transfer --host --session "$SESSION" --room localhost --nick host >logs/host_run.log 2>&1 &
-  echo "房间与房主已在后台运行。另开终端手动起："
-  echo "  ./client_transfer --room localhost --nick A --auto --data-dir .cache/A"
-  echo "  ./client   # 然后输入 join 侦探 localhost"
-  echo "看日志： tail -f logs/room_run.log logs/host_run.log"
-  echo "（想要真正一键多窗格： sudo apt install -y tmux  后重跑本脚本）"
+  ROOM_PID=$!
+  ./client_transfer --host --session "$SESSION" --room localhost --nick host --run-seconds 33 >logs/host_run.log 2>&1 &
+  HOST_PID=$!
+  ./client_transfer --room localhost --nick A --auto --data-dir .cache/A --run-seconds 30 >logs/detectiveA.log 2>&1 &
+  DET_PID=$!
+  echo "三端已在后台运行，侦探A 30 秒后自动退出并打印 TRANSFER_STATS。"
+  echo "看日志： tail -f logs/room_run.log logs/host_run.log logs/detectiveA.log"
+  echo "另可手动开刘界面： ./client   （然后输入 join 侦探 localhost）"
+  wait "$DET_PID"
+  wait "$HOST_PID"
+  kill "$ROOM_PID" 2>/dev/null || true
+  # 统计生图：解析 logs/*.log 里的 TRANSFER_STATS 行（房主/其他节点上传、中继字节、完成时间、校验结果）
+  python3 tests/plot_stats.py --dir logs --out logs/stats.png --title "Local game transfer stats" || true
+  echo "统计图已生成： logs/stats.png"
 fi

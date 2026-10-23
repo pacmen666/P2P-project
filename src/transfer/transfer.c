@@ -49,6 +49,7 @@ struct transfer {
     struct upload uploads[32];
     double relay_retry, next_request, waiting_log;
     uint64_t up_tcp, up_udp, up_relay, down[5];
+    double dl_start, dl_end; unsigned hash_reject; /* 实验8/9统计：完成时间、校验拒绝数 */
 };
 static double stamp(void) { struct timespec x; clock_gettime(CLOCK_MONOTONIC,&x); return x.tv_sec+x.tv_nsec/1e9; }
 static uint32_t full(unsigned n) { return n==32?UINT32_MAX:((1u<<n)-1u); }
@@ -144,6 +145,7 @@ static void finish_file(struct transfer *t,int f) {
     if(t->complete[f] || t->have[f]!=full(g->piece_count)) return;
     if(!hash_ok(t->data[f],g->file_size,g->file_hash)) {event(t,"FILE_HASH_FAIL",f+1,0);return;}
     t->complete[f]=1;
+    if(!t->dl_end && t->complete[0] && t->complete[1] && t->complete[2])t->dl_end=stamp();
     int from=t->last_source[f];
     ui_state_lock(t->ui);
     ui_set_file_status(t->ui,(uint8_t)(f+1),1,from?t->peers[from].info.nick:"local");
@@ -151,7 +153,7 @@ static void finish_file(struct transfer *t,int f) {
     event(t,"FILE_COMPLETE",f+1,from);
 }
 static int store_piece(struct transfer *t,int id,int f,int k,const unsigned char *bytes,size_t n) {
-    if(n!=piece_len(t,f,k) || !hash_ok(bytes,n,t->manifest.files[f].pieces[k].hash)) {event(t,"HASH_REJECT",id,k);return -1;}
+    if(n!=piece_len(t,f,k) || !hash_ok(bytes,n,t->manifest.files[f].pieces[k].hash)) {t->hash_reject++;event(t,"HASH_REJECT",id,k);return -1;}
     if(t->have[f]&(1u<<k)) return 0;
     FILE *fp=fopen(t->manifest.files[f].path,"r+b");
     if(!fp)fp=fopen(t->manifest.files[f].path,"w+b");
@@ -337,7 +339,7 @@ void tr_member(struct transfer *t,const struct ui_peer *p) {
     q->info=*p;
 }
 void tr_mode(struct transfer *t,int mode,int cs_only,int delay_ms){t->mode=mode;t->cs_only=cs_only;t->delay_ms=delay_ms;}
-void tr_download(struct transfer *t,int enabled){t->downloading=enabled;event(t,enabled?"DOWNLOAD_ON":"DOWNLOAD_PAUSED",0,0);}
+void tr_download(struct transfer *t,int enabled){t->downloading=enabled;if(enabled && !t->dl_start)t->dl_start=stamp();event(t,enabled?"DOWNLOAD_ON":"DOWNLOAD_PAUSED",0,0);}
 void tr_accept_udp(struct transfer *t,unsigned id,const struct sockaddr_in *a){if(id<1 || id>4 || id==(unsigned)t->id)return;struct peer *p=&t->peers[id];int first=!p->udp_ok;p->udp=*a;p->udp_ok=1;if(first){event(t,"UDP_READY",(int)id,0);bits_to(t,(int)id,PATH_PUNCH);}}
 int tr_udp(struct transfer *t,const unsigned char *buf,size_t n,const struct sockaddr_in *addr){
     if(n<8 || n>1200 || fa_u16(buf)!=V1_MAGIC || buf[2]!=1 || n!=8u+fa_u16(buf+6))return -1;
@@ -412,5 +414,5 @@ void tr_tick(struct transfer *t){
     if(scheduled)t->next_request=now+t->delay_ms/1000.0;
     else if(now-t->waiting_log>5 && !(t->complete[0] && t->complete[1] && t->complete[2])){event(t,"WAITING_FOR_AVAILABLE_SOURCE",0,0);t->waiting_log=now;}
 }
-void tr_summary(struct transfer *t){printf("TRANSFER_STATS peer=%d tcp_up=%llu udp_up=%llu relay_up=%llu",t->id,(unsigned long long)t->up_tcp,(unsigned long long)t->up_udp,(unsigned long long)t->up_relay);for(int id=1;id<=4;id++)printf(" from_%d=%llu",id,(unsigned long long)t->down[id]);puts("");}
+void tr_summary(struct transfer *t){unsigned long long total=t->up_tcp+t->up_udp+t->up_relay;double el=(t->dl_end>t->dl_start)?(t->dl_end-t->dl_start):-1.0;printf("TRANSFER_STATS peer=%d tcp_up=%llu udp_up=%llu relay_up=%llu total_up=%llu elapsed=%.3f hash_reject=%u",t->id,(unsigned long long)t->up_tcp,(unsigned long long)t->up_udp,(unsigned long long)t->up_relay,total,el,t->hash_reject);for(int id=1;id<=4;id++)printf(" from_%d=%llu",id,(unsigned long long)t->down[id]);puts("");}
 int tr_should_punch(struct transfer *t,unsigned id){if(id<1 || id>4 || id==(unsigned)t->id || !t->raw_len || t->mode==2 || t->peers[id].fallback)return 0;struct connection *c=link_for(t,(int)id);return t->mode==1 || (!c && stamp()-t->peers[id].route_since>1.5);}
