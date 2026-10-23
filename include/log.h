@@ -1,6 +1,7 @@
 #ifndef LOG_H
 #define LOG_H
 
+void log_set_console(int enable);
 void log_init(const char *path);
 void log_close(void);
 
