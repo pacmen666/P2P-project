@@ -48,6 +48,7 @@ struct transfer {
     struct peer peers[5]; struct connection conn[CONNS];
     struct upload uploads[32];
     double relay_retry, next_request, waiting_log;
+    uint32_t announce_sid;
     uint64_t up_tcp, up_udp, up_relay, down[5];
     double dl_start, dl_end; unsigned hash_reject; /* 实验8/9统计：完成时间、校验拒绝数 */
 };
@@ -295,7 +296,14 @@ static int on_message(void *ctx,const struct fa_message *m) {
     if(m->cmd==CMD_MANIFEST_REQ){if(m->length!=4)return -1;
         if(t->raw_len && (!fa_u32(m->body)||fa_u32(m->body)==t->manifest.session_id))return fa_enqueue(&c->tx,CMD_MANIFEST,m->request,t->raw,t->raw_len);
         unsigned char error[2];fa_put16(error,ERR_NO_MANIFEST);return fa_enqueue(&c->tx,CMD_ERROR,m->request,error,2);}
-    if(m->cmd==CMD_MANIFEST){int rc=tr_manifest(t,m->body,m->length);if(!rc && c->id)bits_to(t,c->id,PATH_LAN_TCP);return rc;}
+    if(m->cmd==CMD_MANIFEST){
+        int rc=tr_manifest(t,m->body,m->length);
+        if(!rc){
+            if(c->id)bits_to(t,c->id,PATH_LAN_TCP);
+            else{ui_state_lock(t->ui);t->ui->path_type=PATH_ANNOUNCE;ui_state_unlock(t->ui);}
+        }
+        return rc;
+    }
     if(m->cmd==CMD_BITFIELD && m->length>=9){int id=m->body[4];
         if(id<1 || id>4 || id==t->id || (c->id && c->id!=id))return -1;
         if(!c->id){if(id>t->id || link_for(t,id))return -1;c->id=id;bits_to(t,id,PATH_LAN_TCP);}
@@ -306,6 +314,16 @@ static void connected(struct connection *c) {
     struct transfer *t=c->owner;c->connecting=0;c->last_rx=stamp();
     if(c->relay){unsigned char b[3];b[0]=(unsigned char)t->id;fa_put16(b+1,(uint16_t)t->room);fa_enqueue(&c->tx,CMD_RELAY_BIND,1,b,3);event(t,"RELAY_CONNECTED",t->id,0);}
     else if(c->id){bits_to(t,c->id,PATH_LAN_TCP);event(t,"TCP_CONNECTED",t->id,c->id);}
+    else if(t->announce_sid){
+        unsigned char sid[4];fa_put32(sid,t->announce_sid);
+        uint16_t req=(uint16_t)(++t->serial);if(!req)req=(uint16_t)(++t->serial);
+        fa_enqueue(&c->tx,CMD_MANIFEST_REQ,req,sid,4);
+        ui_state_lock(t->ui);t->ui->path_type=PATH_ANNOUNCE;
+        ui_set_status(t->ui,"已通过通告连接房主，正在索取清单");
+        ui_state_unlock(t->ui);
+        event(t,"ANNOUNCE_TCP",0,0);
+        t->announce_sid=0;
+    }
 }
 static void dial(struct transfer *t,int id,uint32_t ip,uint16_t port,int relay) {
     int fd=socket(AF_INET,SOCK_STREAM,0);if(fd<0)return;
@@ -416,3 +434,19 @@ void tr_tick(struct transfer *t){
 }
 void tr_summary(struct transfer *t){unsigned long long total=t->up_tcp+t->up_udp+t->up_relay;double el=(t->dl_end>t->dl_start)?(t->dl_end-t->dl_start):-1.0;printf("TRANSFER_STATS peer=%d tcp_up=%llu udp_up=%llu relay_up=%llu total_up=%llu elapsed=%.3f hash_reject=%u",t->id,(unsigned long long)t->up_tcp,(unsigned long long)t->up_udp,(unsigned long long)t->up_relay,total,el,t->hash_reject);for(int id=1;id<=4;id++)printf(" from_%d=%llu",id,(unsigned long long)t->down[id]);puts("");}
 int tr_should_punch(struct transfer *t,unsigned id){if(id<1 || id>4 || id==(unsigned)t->id || !t->raw_len || t->mode==2 || t->peers[id].fallback)return 0;struct connection *c=link_for(t,(int)id);return t->mode==1 || (!c && stamp()-t->peers[id].route_since>1.5);}
+int tr_connect_announced(struct transfer *t,uint32_t ip,uint16_t port,uint32_t session){
+    if(!ip || !port || !session)return -1;
+    for(int i=0;i<CONNS;i++){struct connection *c=&t->conn[i];if(c->fd<0 || c->relay || c->id)continue;
+        struct sockaddr_in peer;socklen_t n=sizeof(peer);
+        if(getpeername(c->fd,(struct sockaddr *)&peer,&n)==0 && peer.sin_addr.s_addr==ip && ntohs(peer.sin_port)==port)return 0;}
+    int fd=socket(AF_INET,SOCK_STREAM,0);if(fd<0)return -1;
+    if(fa_nonblock(fd)<0){close(fd);return -1;}
+    struct sockaddr_in addr={0};addr.sin_family=AF_INET;addr.sin_addr.s_addr=ip;addr.sin_port=htons(port);
+    int rc=connect(fd,(struct sockaddr *)&addr,sizeof(addr));
+    if(rc<0 && errno!=EINPROGRESS){close(fd);return -1;}
+    t->announce_sid=session;
+    struct connection *c=add_link(t,fd,0,0,rc<0);
+    if(!c){t->announce_sid=0;return -1;}
+    if(!rc)connected(c);
+    return 0;
+}
