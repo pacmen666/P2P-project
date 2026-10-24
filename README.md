@@ -34,7 +34,7 @@ CS374 网络编程课程项目。合作解谜为外壳，核心是 P2P 分块交
 ## 构建
 
 **Linux / WSL（推荐）**：仓库根 `make` 或 `make room_server relay_server test_client client`。  
-传块联调入口：`make transfer`（`client_transfer`、`relay_transfer`）。  
+传块联调入口：`make transfer`（`client_transfer`、`relay_transfer`）。**答辩与跨网中继以 `relay_server` 为准**；`relay_transfer` 仅 `make test-transfer` 在彭切测试前使用。  
 Windows 开发机见 [`docs/wsl.md`](docs/wsl.md)。不要把 C 运行时 `pipe` 丢进 Winsock `select`（见 `AGENT.md`）。
 
 刘侧说明见 [`docs/week1_liu.md`](docs/week1_liu.md)。  
