@@ -6,7 +6,14 @@ CFLAGS  = -Wall -g -Iinclude
 LDFLAGS =
 
 # 默认目标：编译所有
-all: room_server relay_server test_client
+all: room_server relay_server test_client client
+
+CLIENT_OBJS = src/ui/client_main.c src/punch/udp_sock.c src/ui/ui_state.c src/ui/ui_term.c \
+              src/common/fa_stream.c src/common/log.c
+CLIENT_HDRS = include/common.h include/fa_stream.h include/punch.h include/log.h include/ui_state.h
+
+client: $(CLIENT_OBJS) $(CLIENT_HDRS)
+	$(CC) $(CFLAGS) -pthread $(CLIENT_OBJS) -o $@
 
 # 房间服务
 room_server: src/tracker/room_server.c src/common/log.c src/common/config.c include/common.h include/log.h include/config.h
@@ -22,7 +29,7 @@ test_client: tests/test_client.c src/common/log.c src/common/config.c include/co
 
 # 清理
 clean:
-	rm -f room_server relay_server test_client client_transfer relay_transfer
+	rm -f room_server relay_server test_client client client_transfer relay_transfer
 
 # 重新编译
 re: clean all
