@@ -402,6 +402,8 @@ static void handle_packet(int fd, struct v1_header *h,
     }
 }
 
+static void process_client_buffer(struct client *c);
+
 static void handle_temp_data(int fd)
 {
     struct temp_conn *t = NULL;
@@ -435,8 +437,22 @@ static void handle_temp_data(int fd)
         uint16_t blen = ntohs(h->body_len);
         if (t->rxlen < 8 + blen) break;
 
+        int remaining = t->rxlen - (8 + blen);
         if (h->cmd == CMD_JOIN_REQ) {
             handle_join_req(fd, ntohs(h->req_id), t->rxbuf + 8, blen);
+            if (!t->used) {
+                /* JOIN moved fd to g_clients; temp_remove reset rxlen. */
+                for (int i = 0; i < MAX_CLIENTS; i++) {
+                    struct client *c = &g_clients[i];
+                    if (c->used && c->fd == fd) {
+                        memcpy(c->rxbuf, t->rxbuf + 8 + blen, remaining);
+                        c->rxlen = remaining;
+                        process_client_buffer(c);
+                        break;
+                    }
+                }
+                return;
+            }
         } else {
             log_error("临时连接收到非 JOIN_REQ 指令 0x%02X，关闭 fd=%d",
                       h->cmd, fd);
@@ -474,7 +490,12 @@ static void handle_client_data(int fd)
         return;
     }
     c->rxlen += r;
+    process_client_buffer(c);
+}
 
+static void process_client_buffer(struct client *c)
+{
+    int fd = c->fd;
     while (c->rxlen >= 8) {
         struct v1_header *h = (struct v1_header *)c->rxbuf;
 
@@ -491,6 +512,7 @@ static void handle_client_data(int fd)
         if (c->rxlen < 8 + blen) break;
 
         handle_packet(fd, h, c->rxbuf + 8, NULL);
+        if (!c->used) return;
 
         int consumed = 8 + blen;
         memmove(c->rxbuf, c->rxbuf + consumed, c->rxlen - consumed);
@@ -651,7 +673,10 @@ int main(int argc, char *argv[])
         for (int i = 0; i < MAX_CLIENTS; i++) {
             if (!g_temps[i].used) continue;
             if (!FD_ISSET(g_temps[i].fd, &rfds)) continue;
-            handle_temp_data(g_temps[i].fd);
+            int ready_fd = g_temps[i].fd;
+            handle_temp_data(ready_fd);
+            /* A promoted fd must await fresh readiness before another recv. */
+            FD_CLR(ready_fd, &rfds);
         }
 
         for (int i = 0; i < MAX_CLIENTS; i++) {

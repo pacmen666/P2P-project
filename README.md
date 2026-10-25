@@ -43,3 +43,7 @@ Windows 开发机见 [`docs/wsl.md`](docs/wsl.md)。不要把 C 运行时 `pipe`
 ## 成员
 
 陈（生成与统计）　彭（传送与多路）　王（房间服务与中继）　刘（界面、通告、打洞客户端）
+
+### 2026-10-25 传输收尾补丁
+
+正式中继采用 `relay_server`；单机/Mac 验证、修复原因和分工见 [docs/transfer_closeout.md](docs/transfer_closeout.md)。运行 `make -B test-transfer` 自动构建并测试，无需另开服务。

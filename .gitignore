@@ -50,3 +50,6 @@ tests/py_test/parts/
 /tests/udp_fault.so
 
 /tests/test_transfer_stream
+
+# macOS debug-symbol bundles
+*.dSYM/

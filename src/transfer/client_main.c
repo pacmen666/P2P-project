@@ -23,6 +23,7 @@ struct client {
     struct transfer *tr;
     struct fa_reader reader;
     struct fa_writer writer;
+    int announce_fd;
     int room_fd, connecting, joined, wake[2], role, automatic, seconds;
     atomic_int stop;
     uint16_t room_id;
@@ -110,10 +111,23 @@ static int connect_room(struct client *a){
     return 0;
 }
 static int same_addr(const struct sockaddr_in *a,uint32_t ip,uint16_t port){return a->sin_addr.s_addr==ip && a->sin_port==htons(port);}
-static void udp_read(struct client *a){
+/* Discovery uses its own fixed port; PROBE/PUNCH/PIECE_* keep one ephemeral fd. */
+static int announce_open(void){
+    int fd=socket(AF_INET,SOCK_DGRAM,0),one=1;
+    if(fd<0)return -1;
+    setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));
+#ifdef SO_REUSEPORT
+    setsockopt(fd,SOL_SOCKET,SO_REUSEPORT,&one,sizeof(one));
+#endif
+    struct sockaddr_in addr={0};addr.sin_family=AF_INET;addr.sin_port=htons(37404);
+    if(fd>=FD_SETSIZE || fa_nonblock(fd)<0 || bind(fd,(struct sockaddr *)&addr,sizeof(addr))<0){close(fd);return -1;}
+    return fd;
+}
+static void udp_read(struct client *a,int fd){
     unsigned char buf[1501];struct sockaddr_in src;socklen_t slen=sizeof(src);
-    ssize_t n=recvfrom(a->punch.fd,buf,sizeof(buf),0,(struct sockaddr *)&src,&slen);
+    ssize_t n=recvfrom(fd,buf,sizeof(buf),0,(struct sockaddr *)&src,&slen);
     if(n<8 || n>1200 || fa_u16(buf)!=V1_MAGIC || buf[2]!=1 || n!=8+fa_u16(buf+6))return;
+    if(fd==a->announce_fd && buf[3]!=CMD_ANNOUNCE)return;
     unsigned char *b=buf+8;size_t len=(size_t)n-8;
     if(buf[3]==CMD_PROBE_ACK){
         if(!same_addr(&src,a->room_ip,PORT_ROOM_UDP) || len!=6)return;
@@ -122,6 +136,7 @@ static void udp_read(struct client *a){
         uint16_t room=0;uint32_t sid=0,hip=0;uint16_t tp=0,up=0;char nick[17];
         if(punch_parse_announce(b,(uint16_t)len,&room,&sid,&hip,&tp,&up,nick,sizeof(nick))==0){
             char ip[32];struct in_addr ia={.s_addr=hip};snprintf(ip,sizeof(ip),"%s",inet_ntoa(ia));
+            printf("ANNOUNCE_RECEIVED room=%u session=%08X host=%s:%u\n",room,sid,ip,tp);
             ui_state_lock(&a->ui);a->ui.path_type=PATH_ANNOUNCE;
             ui_set_status(&a->ui,"收到通告 room=%u host=%s:%u nick=%s",room,ip,tp,nick);
             ui_push_event(&a->ui,"ANNOUNCE：%s room=%u session=%08X",nick,room,sid);
@@ -192,6 +207,7 @@ static void *network(void *ctx){
         tr_tick(a->tr);
         fd_set rd,wr;FD_ZERO(&rd);FD_ZERO(&wr);int max=a->wake[0];FD_SET(a->wake[0],&rd);FD_SET(a->punch.fd,&rd);if(a->punch.fd>max)max=a->punch.fd;
         if(a->room_fd>=0){if(!a->connecting)FD_SET(a->room_fd,&rd);if(a->connecting || a->writer.end>a->writer.offset)FD_SET(a->room_fd,&wr);if(a->room_fd>max)max=a->room_fd;}
+        if(a->announce_fd>=0){FD_SET(a->announce_fd,&rd);if(a->announce_fd>max)max=a->announce_fd;}
         tr_sets(a->tr,&rd,&wr,&max);struct timeval tv={0,1000};int rc=select(max+1,&rd,&wr,NULL,&tv);
         if(rc<0){if(errno==EINTR)continue;break;}
         /* Process the selected sockets before commands can open/reuse descriptors. */
@@ -203,7 +219,8 @@ static void *network(void *ctx){
             unsigned char b[4096];ssize_t n=recv(a->room_fd,b,sizeof(b),0);
             if(n==0)room_close(a);else if(n>0){if(fa_feed(&a->reader,b,(size_t)n,on_room,a)<0)room_close(a);}else if(errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR)room_close(a);
         }
-        if(FD_ISSET(a->punch.fd,&rd))udp_read(a);
+        if(FD_ISSET(a->punch.fd,&rd))udp_read(a,a->punch.fd);
+        if(a->announce_fd>=0 && FD_ISSET(a->announce_fd,&rd))udp_read(a,a->announce_fd);
         tr_ready(a->tr,&rd,&wr);
         if(FD_ISSET(a->wake[0],&rd)){
             fa_wake_drain(a->wake[0]);puts("WAKE_COMMAND");
@@ -213,7 +230,7 @@ static void *network(void *ctx){
     tr_summary(a->tr);atomic_store(&a->stop,1);return NULL;
 }
 int main(int argc,char **argv){
-    struct client *a=calloc(1,sizeof(*a));if(!a)return 1;a->room_fd=-1;a->role=2;
+    struct client *a=calloc(1,sizeof(*a));if(!a)return 1;a->room_fd=-1;a->announce_fd=-1;a->role=2;
     char dir[256]=".",session[384]="";int mode=0,cs=0,delay=0,download=0;
     snprintf(a->host,sizeof(a->host),"localhost");snprintf(a->nick,sizeof(a->nick),"detective");
     for(int i=1;i<argc;i++){
@@ -233,6 +250,8 @@ int main(int argc,char **argv){
     setvbuf(stdout,NULL,_IONBF,0);signal(SIGPIPE,SIG_IGN);log_set_console(0);
     ui_state_init(&a->ui);pthread_mutex_init(&a->queue_mu,NULL);snprintf(a->ui.my_nick,sizeof(a->ui.my_nick),"%s",a->nick);
     if(punch_open(&a->punch)<0 || a->punch.fd>=FD_SETSIZE || fa_wake_open(a->wake)<0)return 1;
+    a->announce_fd=announce_open();
+    if(a->announce_fd<0)fputs("ANNOUNCE listener unavailable on UDP 37404\n",stderr);
     a->tr=tr_create(&a->ui,a->punch.fd,dir);if(!a->tr)return 1;
     if(session[0] && tr_load(a->tr,session)<0){fputs("Invalid session/manifest\n",stderr);return 1;}
     tr_mode(a->tr,mode,cs,delay);tr_download(a->tr,download);draw(a);
@@ -244,5 +263,5 @@ int main(int argc,char **argv){
             pthread_mutex_lock(&a->queue_mu);unsigned next=(a->tail+1)%32;if(next!=a->head){snprintf(a->queue[a->tail],512,"%s",line);a->tail=next;}else fputs("Command queue full\n",stderr);pthread_mutex_unlock(&a->queue_mu);fa_wake_signal(a->wake[1]);
         }
     }
-    fa_wake_signal(a->wake[1]);pthread_join(thread,NULL);if(a->room_fd>=0)close(a->room_fd);tr_destroy(a->tr);punch_close(&a->punch);close(a->wake[0]);close(a->wake[1]);pthread_mutex_destroy(&a->queue_mu);pthread_mutex_destroy(&a->ui.mu);free(a);return 0;
+    fa_wake_signal(a->wake[1]);pthread_join(thread,NULL);if(a->room_fd>=0)close(a->room_fd);tr_destroy(a->tr);punch_close(&a->punch);if(a->announce_fd>=0)close(a->announce_fd);close(a->wake[0]);close(a->wake[1]);pthread_mutex_destroy(&a->queue_mu);pthread_mutex_destroy(&a->ui.mu);free(a);return 0;
 }

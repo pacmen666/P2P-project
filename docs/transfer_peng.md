@@ -1,3 +1,5 @@
+> 2026-10-25 更新：当前构建、中继入口及 Mac 验证以 [transfer_closeout.md](transfer_closeout.md) 为准。下文早期 relay_transfer 命令保留为历史记录，不再用于当前联调。
+
 # 彭：P2P 分片传输交付与联调指南
 
 基线：`pacmen666/P2P-project` main `857b468`。本次为基于现有代码的辅助开发成果，提交前请本人阅读、运行并能解释实现；不能将联调通过表述为全组游戏或真实 NAT 实验已完成。

@@ -1,3 +1,5 @@
+> 2026-10-25 更新：当前构建、中继入口及 Mac 验证以 [transfer_closeout.md](transfer_closeout.md) 为准。下文早期 relay_transfer 命令保留为历史记录，不再用于当前联调。
+
 # 在 Mac 上应用补丁并提交到自己的仓库
 
 本补丁基于 main `857b468`，不会替你提交或推送，不会改写其他人的提交。
