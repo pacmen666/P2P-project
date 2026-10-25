@@ -160,6 +160,8 @@ make test-transfer
 
 生成 `client_transfer`、`relay_transfer`。手工三端见 [`docs/transfer_peng.md`](../docs/transfer_peng.md)；验证记录见 [`docs/transfer_validation.md`](../docs/transfer_validation.md)。测试会占用 37401、37402、37405，请先关掉旧 `room_server` / `client`。
 
+**中继口径**：全组正式联调与实验 9 用 `relay_server`；`make test-transfer` 当前仍拉起 `relay_transfer`（待彭切测试后刘侧再改脚本/矩阵，勿自行改 `tests/test_transfer.py` 除非全组确认）。
+
 ## 王侧 / 全组（参考）
 
 ```bash

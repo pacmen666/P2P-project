@@ -10,7 +10,7 @@
 
 `client` 与 `client_transfer` 共用本模块。**禁止**对该 fd 调用 `connect()`；PROBE / PUNCH / ANNOUNCE 均 `sendto`。
 
-第 3 周：同网段通告与关房晚进在 `src/ui/client_main.c` 已验收（四窗见 `docs/wsl.md`）。`client_transfer` 目前只发 `announce`、不收广播。第 4 周：完整对发认证、NAT 类型记录（`docs/punch_hosts.md`）与失败回落中继，与彭 `tr_should_punch` / `tr_accept_udp` 对接。
+第 3 周：同网段通告与关房晚进在 `src/ui/client_main.c` 已验收（四窗见 `docs/wsl.md`，书面 `docs/experiment7_announce.md`）。`client_transfer` 可发 `announce` 并收广播后 `tr_connect_announced`。第 4 周：完整对发认证、NAT 类型记录（`docs/punch_hosts.md`）与失败回落中继，与彭 `tr_should_punch` / `tr_accept_udp` 对接。
 
 ## 规则
 

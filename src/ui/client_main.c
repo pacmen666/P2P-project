@@ -22,8 +22,23 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #define MAX_PEER_LINKS 4
+
+static void choice_log_append(const char *nick, const char *choice)
+{
+    mkdir("logs", 0700);
+    FILE *fp = fopen("logs/choice_summary.log", "a");
+    if (!fp) return;
+    time_t now = time(NULL);
+    struct tm tm;
+    localtime_r(&now, &tm);
+    char ts[32];
+    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm);
+    fprintf(fp, "%s nick=%s choice=%s\n", ts, nick, choice);
+    fclose(fp);
+}
 
 struct app;
 struct peer_link {
@@ -776,8 +791,7 @@ static void *ui_thread(void *arg)
     ui_state_unlock(&a->ui);
 
     while (!a->stop && fgets(line, sizeof(line), stdin)) {
-        char *nl = strchr(line, '\n');
-        if (nl) *nl = '\0';
+        fa_chomp_line(line);
         if (strncmp(line, "quit", 4) == 0) {
             wake_send(a, WAKE_QUIT);
             break;
@@ -798,9 +812,11 @@ static void *ui_thread(void *arg)
                     ui_set_file_meta(&a->ui, (uint8_t)file_id,
                                       (uint8_t)file_id, 2, 0, zhash);
                 }
-                if (ui_set_file_status(&a->ui, (uint8_t)file_id, 1, source) == 0)
+                if (ui_set_file_status(&a->ui, (uint8_t)file_id, 1, source) == 0) {
+                    if (a->ui.phase == UI_PHASE_IN_ROOM)
+                        ui_advance_phase(&a->ui, UI_PHASE_CH1);
                     ui_push_event(&a->ui, "测试注入：证物%u 来源=%s", file_id, source);
-                else
+                } else
                     ui_set_status(&a->ui, "markhave：未知证物 %u", file_id);
                 ui_state_unlock(&a->ui);
             }
@@ -829,6 +845,9 @@ static void *ui_thread(void *arg)
         } else if (strncmp(line, "choose ", 7) == 0) {
             ui_state_lock(&a->ui);
             if (a->ui.phase == UI_PHASE_CHOICE) {
+                const char *opt = line + 7;
+                while (*opt == ' ') opt++;
+                choice_log_append(a->ui.my_nick, opt);
                 ui_advance_phase(&a->ui, UI_PHASE_DONE);
                 ui_push_event(&a->ui, "选择已提交，本局结束");
             } else {

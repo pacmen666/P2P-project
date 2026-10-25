@@ -83,9 +83,11 @@ python3 tools/gen_case.py
 ./room_server
 ```
 
-终端 2（验证回落时启动，可独立关闭；与原 relay_server 不能同时占端口）：
+终端 2（验证回落时启动，可独立关闭；与 `relay_server` **不能同时占 37405**）：
 
 ```bash
+./relay_server    # 正式答辩 / 实验 9 推荐
+# 或（仅 make test-transfer 仍依赖时）
 ./relay_transfer
 ```
 
@@ -124,7 +126,7 @@ C 加入后输入 `get`。观察 `TRANSFER PIECE_OK 2 ...`，说明块来自 B�
 
 ## 7. 仍需全组联调的边界
 
-- 刘的广播发现、Tracker 离线后新玩家加入：本独立客户端目前只发送 announce，不接收广播、不分配离线新玩家身份；实验 7 不能标记完成。已知玩家继续传输已测试。
+- 关房晚进通告：`client_transfer` 已可收 `CMD_ANNOUNCE` 并 `tr_connect_announced`（与 `./client` 同路径）；**不**通过 Tracker 分配 peer，晚进仍为 peer 0。本机四窗验收见 `docs/experiment7_announce.md`。已知 peer 继续传输已测试。
 - 刘的真实跨网打洞：当前实现对来源地址、session 和 peer_id 做一致性检查，但这不是密码学认证；不同 NAT、校园网和异地网络尚未验收。
 - 王的中继正式实现可替换此适配层。目前沿用单房间 room=1 和本机 `/tmp/room_peers.txt`，Tracker 与中继必须部署同一机器；无身份令牌，不能作为公网生产服务。
 - 陈的正式图像/剧情生成与实验 8 统计接口还要接入；当前收块保存和统计在 transfer 内，可按本地 API 对接，不需要更改线上协议。

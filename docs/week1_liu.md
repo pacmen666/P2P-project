@@ -55,7 +55,18 @@ bash tests/full_liu_smoke.sh
 - `next` / `answer` / `choose` 命令骨架；真实局号依赖陈侧 MANIFEST
 - 套接字选项总表：`docs/experiment4_sockopts.md`
 
-**与 `client_transfer`：** `ui_state` / `ui_term` / punch 已被彭复用（`make transfer`）。真传块、HAVE 点亮证物、本网直连/中继路径以 `./client_transfer` 为准。关房通告接收目前只在 `./client`；迁入 transfer 入口见对接矩阵。
+**与 `client_transfer`：** `ui_state` / `ui_term` / punch 已被彭复用（`make transfer`）。真传块、HAVE 点亮证物、本网直连/中继路径以 `./client_transfer` 为准。关房晚进通告 + `MANIFEST_REQ`：`./client` 与 `./client_transfer`（`tr_connect_announced`）均可作 D 窗，见 `docs/experiment7_announce.md`。
+
+## 本机验收（2026-10-24，`LAP-NICKY` / WSL）
+
+| 项 | 命令 / 现象 | 证据 |
+|----|-------------|------|
+| 自动化 | `bash tests/probe_only.sh && bash tests/liu_week2_smoke.sh && bash tests/full_liu_smoke.sh` | `ACK_OK`、`liu_week2_smoke: OK`、`logs/client.log` 含 PROBE |
+| 章节 + 择一 | `./client`：`join` → `markhave 1–3` → `next` → `answer 1` → `next` → `choose 2` | `logs/choice_summary.log` 含 `nick=侦探 choice=2` |
+| 在线通告 | 房主 `announce`，侦探已 join | `路径：通告发现`、`ANNOUNCE` |
+| 关房晚进 | 四窗，D 禁止 join | 见 `experiment7_announce.md` 实测表 |
+
+交互行读取：`fa_chomp_line`（`include/fa_stream.h`）去掉 `\r\n` 与首尾空白，避免 Windows 终端下 `next` 被误判为「未知命令」。
 
 ## 仍未做 / 依赖他组
 
@@ -63,4 +74,4 @@ bash tests/full_liu_smoke.sh
 - 完整打洞对发、NAT 记录与中继回落（第 4 周；彭 `tr_should_punch` 已有骨架）
 - 房主缓存并下发真实 MANIFEST（陈 + 王侧上传）
 - 案情板来源由彭 HAVE/BITFIELD 驱动（`client_transfer` 已接；`./client` 仍可用 `markhave` 联调）
-- `choose` 选项汇总记录；实验 7 书面环境与实验 9 跨网记录
+- 实验 9 跨网 / 第二台机（模板 `docs/experiment9_relay.md`）；`answer`/`choose` 正文校验仍为流程占位

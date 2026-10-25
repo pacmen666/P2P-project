@@ -35,4 +35,6 @@ int fa_wake_open(int pair[2]);
 /* Pipe is notification only. Store commands separately when UI is integrated. */
 int fa_wake_signal(int fd);
 int fa_wake_drain(int fd);
+/* fgets 之后：去掉 \\r\\n、UTF-8 BOM、首尾空白 */
+void fa_chomp_line(char *s);
 #endif

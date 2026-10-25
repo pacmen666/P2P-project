@@ -24,5 +24,7 @@ void tr_tick(struct transfer *t);
 void tr_summary(struct transfer *t);
 /* Whether discovery should try PUNCH; established LAN TCP always has priority. */
 int tr_should_punch(struct transfer *t, unsigned id);
+/* 关房晚进：非阻塞 TCP 连房主并排队 MANIFEST_REQ（连接 id=0） */
+int tr_connect_announced(struct transfer *t, uint32_t ip, uint16_t port, uint32_t session);
 
 #endif

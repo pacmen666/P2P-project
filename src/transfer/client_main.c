@@ -15,6 +15,7 @@
 #include <stdatomic.h>
 #include <time.h>
 #include <poll.h>
+#include <sys/stat.h>
 
 struct client {
     struct ui_state ui;
@@ -28,12 +29,23 @@ struct client {
     uint32_t room_ip, local_ip;
     char host[256], nick[17];
     double deadline, hb, room_rx, manifest_retry, punch_due, born;
+    uint32_t announced_host_ip_n;
+    uint16_t announced_host_tcp_h;
+    uint32_t announced_session;
     struct sockaddr_in punch_addr[5];
     int punch_seen[5];
     pthread_mutex_t queue_mu;
     char queue[32][512];unsigned head,tail;
 };
 static double stamp(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec+t.tv_nsec/1e9;}
+static void choice_log_append(const char *nick,const char *choice){
+    mkdir("logs",0700);
+    FILE *fp=fopen("logs/choice_summary.log","a");
+    if(!fp)return;
+    time_t now=time(NULL);struct tm tm;localtime_r(&now,&tm);
+    char ts[32];strftime(ts,sizeof(ts),"%Y-%m-%d %H:%M:%S",&tm);
+    fprintf(fp,"%s nick=%s choice=%s\n",ts,nick,choice);fclose(fp);
+}
 static void draw(struct client *a){ui_state_lock(&a->ui);ui_term_draw(&a->ui);ui_state_unlock(&a->ui);}
 static int room_send(struct client *a,uint8_t cmd,uint16_t req,const void *body,size_t len){return a->room_fd<0?-1:fa_enqueue(&a->writer,cmd,req,body,len);}
 static void room_close(struct client *a){if(a->room_fd>=0)close(a->room_fd);a->room_fd=-1;a->connecting=0;a->writer.offset=a->writer.end=0;ui_state_lock(&a->ui);a->ui.room_online=0;ui_set_status(&a->ui,"Tracker 离线；已知玩家仍可取块");ui_state_unlock(&a->ui);puts("TRACKER_OFFLINE");}
@@ -106,6 +118,22 @@ static void udp_read(struct client *a){
     if(buf[3]==CMD_PROBE_ACK){
         if(!same_addr(&src,a->room_ip,PORT_ROOM_UDP) || len!=6)return;
         uint32_t ip;uint16_t port;if(punch_parse_probe_ack(b,(uint16_t)len,&ip,&port)==0){ui_state_lock(&a->ui);struct in_addr x={.s_addr=ip};snprintf(a->ui.refl_text,sizeof(a->ui.refl_text),"%s:%u",inet_ntoa(x),port);ui_state_unlock(&a->ui);}
+    }else if(buf[3]==CMD_ANNOUNCE){
+        uint16_t room=0;uint32_t sid=0,hip=0;uint16_t tp=0,up=0;char nick[17];
+        if(punch_parse_announce(b,(uint16_t)len,&room,&sid,&hip,&tp,&up,nick,sizeof(nick))==0){
+            char ip[32];struct in_addr ia={.s_addr=hip};snprintf(ip,sizeof(ip),"%s",inet_ntoa(ia));
+            ui_state_lock(&a->ui);a->ui.path_type=PATH_ANNOUNCE;
+            ui_set_status(&a->ui,"收到通告 room=%u host=%s:%u nick=%s",room,ip,tp,nick);
+            ui_push_event(&a->ui,"ANNOUNCE：%s room=%u session=%08X",nick,room,sid);
+            int online=a->ui.room_online;ui_state_unlock(&a->ui);
+            if(!online && (a->announced_host_ip_n!=hip || a->announced_host_tcp_h!=tp || a->announced_session!=sid)){
+                a->announced_host_ip_n=hip;a->announced_host_tcp_h=tp;a->announced_session=sid;
+                if(tr_connect_announced(a->tr,hip,tp,sid)<0){
+                    ui_state_lock(&a->ui);ui_set_status(&a->ui,"通告房主连接失败 %s:%u",ip,tp);
+                    ui_push_event(&a->ui,"通告连接失败");ui_state_unlock(&a->ui);
+                }
+            }
+        }
     }else if(buf[3]==CMD_PUNCH){
         uint32_t sid;uint8_t from,to;if(punch_parse_punch(b,(uint16_t)len,&sid,&from,&to)<0 || from<1 || from>4 || from==a->ui.my_peer_id || to!=a->ui.my_peer_id || sid!=a->ui.session_id)return;
         for(int i=0;i<4;i++){struct ui_peer *p=&a->ui.peers[i];if(p->used && p->peer_id==from && (same_addr(&src,p->priv_ip_n,p->udp_port_h)||same_addr(&src,p->refl_ip_n,p->refl_port_h))){
@@ -134,7 +162,12 @@ static void command(struct client *a,const char *line){
         else if(a->ui.phase==UI_PHASE_CH2 && a->ui.files[2].have)ui_advance_phase(&a->ui,UI_PHASE_CHOICE);
         else ui_set_status(&a->ui,"本机证物未校验齐全，不能推进");
     }else if(!strncmp(line,"answer ",7) && a->ui.phase==UI_PHASE_QUIZ)ui_advance_phase(&a->ui,UI_PHASE_CH2);
-    else if(!strncmp(line,"choose ",7) && a->ui.phase==UI_PHASE_CHOICE)ui_advance_phase(&a->ui,UI_PHASE_DONE);
+    else if(!strncmp(line,"choose ",7) && a->ui.phase==UI_PHASE_CHOICE){
+        const char *opt=line+7;while(*opt==' ')opt++;
+        choice_log_append(a->ui.my_nick[0]?a->ui.my_nick:a->nick,opt);
+        ui_advance_phase(&a->ui,UI_PHASE_DONE);
+        ui_push_event(&a->ui,"选择已提交，本局结束");
+    }
     else if(!strcmp(line,"redraw")){}else ui_set_status(&a->ui,"命令：get / pause / stats / next / answer / choose / quit");
     ui_term_draw(&a->ui);ui_state_unlock(&a->ui);
 }
@@ -207,7 +240,7 @@ int main(int argc,char **argv){
     int eof=0;
     while(!atomic_load(&a->stop)){
         struct pollfd p={STDIN_FILENO,POLLIN,0};int rc=poll(eof?NULL:&p,eof?0:1,100);
-        if(rc>0 && (p.revents&(POLLIN|POLLHUP))){char line[512];if(!fgets(line,sizeof(line),stdin)){eof=1;if(!a->seconds)atomic_store(&a->stop,1);continue;}line[strcspn(line,"\r\n")]=0;
+        if(rc>0 && (p.revents&(POLLIN|POLLHUP))){char line[512];if(!fgets(line,sizeof(line),stdin)){eof=1;if(!a->seconds)atomic_store(&a->stop,1);continue;}fa_chomp_line(line);
             pthread_mutex_lock(&a->queue_mu);unsigned next=(a->tail+1)%32;if(next!=a->head){snprintf(a->queue[a->tail],512,"%s",line);a->tail=next;}else fputs("Command queue full\n",stderr);pthread_mutex_unlock(&a->queue_mu);fa_wake_signal(a->wake[1]);
         }
     }

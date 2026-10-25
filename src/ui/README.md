@@ -8,9 +8,9 @@
 |------|------|
 | `ui_state.c` | 局号、昵称、成员、三文件摘要前缀、已有/缺失/来源、路径类型（**无种子字段**） |
 | `ui_term.c` | 终端案情板；`./client` 与 `client_transfer` 共用 |
-| `client_main.c` | 刘侧入口 `./client`：进房、PEER_LIST、PROBE、ANNOUNCE、关房后 MANIFEST_REQ、PUNCH 骨架、`markhave` / `next` / `answer` / `choose` |
+| `client_main.c` | 刘侧入口 `./client`：进房、PEER_LIST、PROBE、ANNOUNCE、关房后 MANIFEST_REQ、PUNCH 骨架、`markhave` / `next` / `answer` / `choose`（`choose` 写 `logs/choice_summary.log`） |
 
-构建：仓库根 `make client` → `./client`（Linux / WSL）。传块联调入口是 `make transfer` → `./client_transfer`（`src/transfer/client_main.c` 复用本目录 `ui_state` / `ui_term`）。说明见 `docs/week1_liu.md`、`docs/wsl.md`。
+构建：仓库根 `make` 或 `make client` → `./client`（Linux / WSL）。传块联调入口是 `make transfer` → `./client_transfer`（`src/transfer/client_main.c` 复用本目录 `ui_state` / `ui_term`）。stdin 行尾经 `fa_chomp_line` 处理。说明见 `docs/week1_liu.md`、`docs/wsl.md`、`docs/experiment7_announce.md`。
 
 ## 路径文案（约定四类）
 

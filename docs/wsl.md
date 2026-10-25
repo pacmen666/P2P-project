@@ -17,8 +17,11 @@ sudo apt install -y build-essential make python3
 ```bash
 cd /mnt/d/Coding_Project/CS374/Project
 make clean
-make
+make              # room_server、relay_server、test_client、client
+make transfer     # client_transfer、relay_transfer（传块 / D 窗可选入口）
 ```
+
+`join` / `next` / `announce` 等是 **`./client` 案情板内命令**，不要在 bash 里直接输入（否则会报 `No such file or directory`）。
 
 ## 测试
 
@@ -62,7 +65,9 @@ python3 tests/probe_ack_check.py # 需已手动起 ./room_server
 终端 2：`./client` → `join 侦探 localhost` →（可选）`probe`  
 房主通告：再开终端 → `./client` → `join 房主 localhost host` → `announce`
 
-`client` 内常用：`markhave <1-3> [来源]`、`next`、`answer <文本>`、`choose <n>`、`quit`。日志：`logs/client.log`。
+`client` 内常用：`markhave <1-3> [来源]`、`next`、`answer <文本>`、`choose <n>`、`quit`。日志：`logs/client.log`；三项择一汇总：`logs/choice_summary.log`（`client` / `client_transfer` 共用）。Windows 终端输入经 `fa_chomp_line` 规范化，避免 `next` 因行尾 `\r` 显示「未知命令」。
+
+自动化脚本结束时的 `Killed ... ./room_server` 为脚本 `kill -9` 收尾，**不是失败**。
 
 ## 关房实验：标准四窗（D 禁止 join）
 
@@ -76,7 +81,7 @@ python3 tests/probe_ack_check.py # 需已手动起 ./room_server
 | **A** | `room_server` | 关房时仅在此按 `Ctrl+C`，不要用 `pkill -f client` |
 | **B** | 房主 client | `join 房主 localhost host`，之后可多次 `announce` |
 | **C** | 侦探 client（可选） | 仅 `join 侦探 localhost`，用于确认**在线**时能收到 ANNOUNCE |
-| **D** | 晚进 client | **只** `./client`，**禁止** `join` / `probe` / `announce` |
+| **D** | 晚进 client | **只** `./client` 或 `make transfer` 后的 `./client_transfer`，**禁止** `join` / `probe` / `announce` |
 
 ### 0. 干净启动（建议每次实验前执行一次）
 
@@ -150,6 +155,7 @@ announce
 ```bash
 cd /mnt/d/Coding_Project/CS374/Project
 ./client
+# 或统一演示入口：make transfer && ./client_transfer
 ```
 
 **不要输入任何 join 命令。** 界面应长期保持：

@@ -92,3 +92,22 @@ int fa_wake_drain(int fd) {
         return -1;
     }
 }
+
+void fa_chomp_line(char *s)
+{
+    size_t n, start;
+    if (!s)
+        return;
+    s[strcspn(s, "\r\n")] = '\0';
+    if ((unsigned char)s[0] == 0xEF && (unsigned char)s[1] == 0xBB &&
+        (unsigned char)s[2] == 0xBF)
+        memmove(s, s + 3, strlen(s + 3) + 1);
+    n = strlen(s);
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t'))
+        s[--n] = '\0';
+    start = 0;
+    while (s[start] == ' ' || s[start] == '\t')
+        start++;
+    if (start > 0)
+        memmove(s, s + start, strlen(s + start) + 1);
+}
