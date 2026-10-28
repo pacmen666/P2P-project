@@ -1,6 +1,6 @@
 # 实验 9：跨网 / 中继（记录模板）
 
-正式中继进程为 **`./relay_server`**（TCP 37405，`RELAY_BIND` / `RELAY_WRAP`）。`make test-transfer` 在彭侧切换前仍用 `relay_transfer`，见 [`experiment4_sockopts.md`](experiment4_sockopts.md)。
+正式中继进程为 **`./relay_server`**（TCP 37405，`RELAY_BIND` / `RELAY_WRAP`）。`make test-transfer` **已切** `relay_server`（`Makefile` / 提交 `9017eb7`）。历史适配层 `relay_transfer` 不再作为测试默认进程，见 [`experiment4_sockopts.md`](experiment4_sockopts.md)。
 
 ## 前置
 

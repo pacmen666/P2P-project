@@ -65,6 +65,7 @@ bash tests/full_liu_smoke.sh
 | 章节 + 择一 | `./client`：`join` → `markhave 1–3` → `next` → `answer 1` → `next` → `choose 2` | `logs/choice_summary.log` 含 `nick=侦探 choice=2` |
 | 在线通告 | 房主 `announce`，侦探已 join | `路径：通告发现`、`ANNOUNCE` |
 | 关房晚进 | 四窗，D 禁止 join | 见 `experiment7_announce.md` 实测表 |
+| `make test-transfer` | 基线 `9017eb7`，WSL 全绿 | 见 `transfer_validation.md` 2026-10-28 节 |
 
 交互行读取：`fa_chomp_line`（`include/fa_stream.h`）去掉 `\r\n` 与首尾空白，避免 Windows 终端下 `next` 被误判为「未知命令」。
 

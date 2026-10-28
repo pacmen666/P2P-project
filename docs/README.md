@@ -12,7 +12,8 @@
 | `punch_hosts.md` | 提交 | 打洞主机名单表（勿填家庭公网 IP） |
 | `experiment4_sockopts.md` | 提交 | 实验 4 套接字选项汇总（刘维护） |
 | `experiment7_announce.md` | 提交 | 实验 7 关房通告发现书面记录 |
-| `experiment9_relay.md` | 提交 | 实验 9 跨网/中继记录模板（待第二台机） |
+| `experiment9_relay.md` | 提交 | 实验 9 跨网/中继记录（测试已切 `relay_server`） |
+| `全组联调计划_2026-10-28.md` | 提交 | 本周同网段两机联调计划（下发给组员） |
 | `wsl.md` | 提交 | WSL 构建、自动化测试命令、关房四窗手工流程 |
 | `integration_matrix.md` | 提交 | 四人谁与谁对齐、交付物与完成标准 |
 | `transfer_peng.md` | 提交 | 彭传块交付与联调边界 |
@@ -20,8 +21,8 @@
 | `README.md`（本文件） | 提交 | 可编辑 |
 
 刘侧测试命令索引：`tests/README.md`（脚本明细）、`docs/wsl.md`（WSL 快捷命令）。  
-刘侧本机验收摘要：`docs/week1_liu.md`（2026-10-24）；关房通告实测：`docs/experiment7_announce.md`。  
-全组对接索引：`docs/integration_matrix.md`。
+刘侧本机验收摘要：`docs/week1_liu.md`（2026-10-24 / 10-28）；关房通告实测：`docs/experiment7_announce.md`。  
+全组对接索引：`docs/integration_matrix.md`。本周联调：`docs/全组联调计划_2026-10-28.md`。
 
 ## 规则
 

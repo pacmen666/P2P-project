@@ -24,7 +24,7 @@
 | 清单   | Tracker 缓存 `MANIFEST`，支持 `MANIFEST_REQ`            | 板上局号、三证物摘要                                     | 非「待清单」；晚进可索取                       |
 | 关房   | 可停 Tracker；不再查持有                                   | 通告发现 + 晚进 TCP 要清单                              | 四窗实验 D（peer 0）验收                   |
 | 对外地址 | 第 3 周：反射登记/查询接口                                    | 打洞用**同一 UDP** fd                               | 文档写明字段来源                           |
-| 中继   | `relay_server` 或 `relay_transfer`                  | 失败路径连中继，界面「中继」                                 | 回落时中继字节 > 0，且不说成打洞成功               |
+| 中继   | 正式进程 **`relay_server`**（TCP 37405）               | 失败路径连中继，界面「中继」                                 | 回落时中继字节 > 0，且不说成打洞成功；`make test-transfer` 已切 `relay_server` |
 | 部署   | Tracker 与中继同机等待约定                                  | `config/room.conf`、联调 IP                       | 全组同一 `tracker_host` / `relay_host` |
 
 
@@ -37,7 +37,7 @@
 
 | 对齐项        | 彭交付                                                   | 刘职责                                       | 完成标准                                |
 | ---------- | ----------------------------------------------------- | ----------------------------------------- | ----------------------------------- |
-| 统一入口       | `client_transfer`、`transfer.c`（`make transfer`）       | 将 **收 ANNOUNCE / 关房晚进** 并入同入口或定合并日        | 演示只用一个客户端二进制                        |
+| 统一入口       | `client_transfer`、`transfer.c`（`make transfer`）       | 收 `CMD_ANNOUNCE`、关房晚进 `tr_connect_announced` | 演示可用同一 `client_transfer` 作房主/侦探/关房 D |
 | 案情板        | `ui_set_file_meta` / `ui_set_file_status`；`path_type` | 已有/缺失/来源、顶栏路径                             | `get` 后不用 `markhave` 也能「已有」         |
 | HAVE 语义    | 远端 HAVE 不点亮本机                                         | UI 仅本机校验通过后标已有                            | 与 `docs/transfer_peng.md` §3 一致     |
 | 打洞         | `tr_should_punch`、`tr_accept_udp`                     | 同 fd 发 `PUNCH`、认证与超时                      | 打洞成功后彭走 `PATH_PUNCH`                |
@@ -46,10 +46,9 @@
 | 日志/事件      | `event(t, ...)` 字符串                                   | 是否映射到「最近事件」                               | 两人定一种演示习惯                           |
 
 
-**彭文档已列、须和刘对齐的缺口（`docs/transfer_peng.md` §7）：**
+**已对齐：** `client_transfer` **已收** `CMD_ANNOUNCE` 并 `tr_connect_announced`。实验 7 可用 `./client` 或 `./client_transfer` 作 D 窗（peer 0、禁止 join）。
 
-- `client_transfer` **只发 announce、不收** → 实验 7 在 `./client` 已测，**须迁入 transfer 入口**。
-- 跨网打洞：刘环境 + 王地址 + 彭 UDP，三人联测。
+**仍待三人联测：** 跨网打洞（刘环境 + 王反射地址 + 彭 UDP）。
 
 ---
 

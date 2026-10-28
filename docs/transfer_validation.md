@@ -97,3 +97,26 @@ relay_server、16 KiB 中继转发、拆包粘包、房间及身份和长度检�
 
 范围：本次为单机多进程回归，不代表三台真实设备联机、跨网 NAT 打洞、
 关房后新玩家完整下载或完整解谜流程已经通过。
+
+## 2026-10-28 复测（WSL2，`LAP-NICKY`）
+
+基线 `9017eb7`。环境：WSL Ubuntu，`/mnt/d/Coding_Project/CS374/Project`。  
+命令：`make clean && make && make transfer`，然后三连冒烟 + `make test-transfer`。
+
+刘侧三连：`ACK_OK`、`liu_week2_smoke: OK`、`logs/client.log` 含 PROBE/PROBE_ACK。  
+`make test-transfer` 退出码 0：
+
+```text
+ALL STREAM TESTS PASS
+PASS manifest: truncation, trailing bytes, file count/id/chapter, oversize rejected
+PASS TCP: verified files, B->C upload, multisource, Tracker loss, source loss, no false HAVE
+PASS restart: reused persisted cache, rejected damaged cached block, same nickname rejoin
+PASS UDP selective loss: NAK missing subpacket recovery and verified short final blocks
+PASS UDP total loss: bounded retries -> actual TCP relay -> verified files
+PASS relay: 16KiB, split/coalesced frames, room/membership/source/length checks, slow-reader isolation
+PASS ANNOUNCE listener: port 37404 retained alongside independent transfer UDP socket
+ALL TRANSFER INTEGRATION TESTS PASS
+```
+
+证据目录：`/tmp/fragment-transfer-tests-0x0se_xp`。  
+对照 2026-10-24 同机 UDP `once` 超时：本次已过。仍不宣称真实 NAT 或多机联调完成。
