@@ -13,6 +13,7 @@
 """
 import argparse
 import base64
+import hashlib
 import json
 import os
 import sys
@@ -21,6 +22,7 @@ from urllib import request as ureq
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import case_common as cc
+import llm_case
 from seed_image import PRNG
 
 ARK_API = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
@@ -90,16 +92,19 @@ def pick(rng, lst):
     return lst[rng.randint(0, len(lst) - 1)]
 
 
-def gen_ai_images(seed, key, model, strict):
-    rng = PRNG(seed)
-    hair, coat, feat, room = pick(rng, HAIR), pick(rng, COAT), pick(rng, FEAT), pick(rng, ROOMS)
-    p_portrait = (f"Detective noir character portrait of a suspect: {hair}, wearing {coat}, "
-                  f"{feat}, head and shoulders, dramatic side lighting, dark background, "
-                  f"cinematic, highly detailed. IMPORTANT: no readable text, no letters, no names, "
-                  f"no numbers anywhere in the image")
-    p_scene = (f"Detective noir crime scene: {room}, dimly lit, cinematic lighting, high detail, "
-               f"film grain, moody atmosphere. IMPORTANT: no readable text, no letters, no names, "
-               f"no numbers anywhere in the image")
+def gen_ai_images(seed, key, model, strict, p_portrait=None, p_scene=None):
+    if p_portrait is None or p_scene is None:   # 无剧本 prompt 时退回固定素材池（兜底）
+        rng = PRNG(seed)
+        hair, coat, feat, room = pick(rng, HAIR), pick(rng, COAT), pick(rng, FEAT), pick(rng, ROOMS)
+        if p_portrait is None:
+            p_portrait = (f"Detective noir character portrait of a suspect: {hair}, wearing {coat}, "
+                          f"{feat}, head and shoulders, dramatic side lighting, dark background, "
+                          f"cinematic, highly detailed. IMPORTANT: no readable text, no letters, no names, "
+                          f"no numbers anywhere in the image")
+        if p_scene is None:
+            p_scene = (f"Detective noir crime scene: {room}, dimly lit, cinematic lighting, high detail, "
+                       f"film grain, moody atmosphere. IMPORTANT: no readable text, no letters, no names, "
+                       f"no numbers anywhere in the image")
     portrait = scene = None
     try:
         portrait = compress_image(call_ark(model, key, p_portrait))
@@ -129,23 +134,56 @@ def main():
     if len(seed) < 16:
         sys.exit("种子需 >= 16 字节")
 
-    case = cc.gen_case(seed)            # 谜题 + 程序化图（兜底）+ 文本（file_3 含 [判据]）
-    sid = case["session_id"]
-    f1_prog, f2_prog, f3_text = case["files"][1], case["files"][2], case["files"][3]
-
     load_dotenv(args.dotenv)
-    key, model = os.environ.get("ARK_API_KEY"), os.environ.get("ARK_MODEL")
-    if key and model:
-        ai1, ai2 = gen_ai_images(seed, key, model, args.strict)
+    key = os.environ.get("ARK_API_KEY")
+    img_model = os.environ.get("ARK_MODEL")
+    llm_model = os.environ.get("ARK_LLM_MODEL")
+
+    seed_hash = hashlib.sha256(seed).digest()
+
+    # 1) 优先走 LLM 剧本（需额外配置 ARK_LLM_MODEL，即 doubao 推理接入点）
+    script = None
+    if key and llm_model:
+        script = llm_case.gen_case_json(seed, key, llm_model, args.strict)
+
+    murderer_name = None
+    f1_prog = f2_prog = None
+    f3_text = None
+    f1_prompt = f2_prompt = None
+
+    if script:
+        # LLM 出剧本：正文 + 文生图提示词；答案仍藏 file_3 哨兵行后
+        murderer_name = script["murderer"]
+        f3_text = (script["case_text"].encode("utf-8")
+                   + "[判据] 真凶：".encode("utf-8")
+                   + murderer_name.encode("utf-8") + b"\n")
+        f1_prompt, f2_prompt = script["file1_prompt"], script["file2_prompt"]
+        # 程序化兜底图（文生图失败时用），顺便取 session_id
+        case = cc.gen_case(seed)
+        sid = case["session_id"]
+        f1_prog, f2_prog = case["files"][1], case["files"][2]
+    else:
+        # 回退：完全程序化模板
+        case = cc.gen_case(seed)
+        sid = case["session_id"]
+        f1_prog, f2_prog, f3_text = case["files"][1], case["files"][2], case["files"][3]
+        murderer_name = cc.SUSPECTS[case["murderer"]]
+
+    # 2) 文生图渲染 file_1 / file_2
+    if key and img_model:
+        ai1, ai2 = gen_ai_images(seed, key, img_model, args.strict,
+                                 p_portrait=f1_prompt, p_scene=f2_prompt)
         f1 = ai1 if ai1 else f1_prog
         f2 = ai2 if ai2 else f2_prog
-        mode = "ai"
+        mode = "llm+ai" if script else "ai"
     else:
-        f1, f2, mode = f1_prog, f2_prog, "template(fallback)"
-        sys.stderr.write("[warn] 未配置方舟 key，使用程序化图\n")
+        f1, f2 = f1_prog, f2_prog
+        mode = "llm+template" if script else "template(fallback)"
+        if not (key and img_model):
+            sys.stderr.write("[warn] 未配置方舟 key，使用程序化图\n")
 
     files = [(1, 1, 1, f1), (2, 1, 1, f2), (3, 2, 2, f3_text)]
-    manifest = cc.build_manifest(sid, case["seed_hash"], files)
+    manifest = cc.build_manifest(sid, seed_hash, files)
 
     sdir = os.path.join(args.base, f"session_{sid:08x}")
     os.makedirs(sdir, exist_ok=True)
@@ -162,7 +200,7 @@ def main():
 
     print(f"session_{sid:08x}  mode={mode}  "
           f"file1={len(f1)}B file2={len(f2)}B file3={len(f3_text)}B manifest={len(manifest)}B")
-    print(f"[host] 真凶（仅房主可见）：{cc.SUSPECTS[case['murderer']]}  -> 见 file_3 末行 [判据]")
+    print(f"[host] 真凶（仅房主可见）：{murderer_name}  -> 见 file_3 末行 [判据]")
 
 
 if __name__ == "__main__":

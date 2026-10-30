@@ -21,7 +21,11 @@ python ai_gen_case.py 00112233445566778899aabbccddeeff --preview
 - 未配置密钥时自动降级为程序化图（见 `case_common.gen_case`），保证可跑。
 
 ## 密钥
-云端图像接口的 Key 放在 `.env`（`ARK_API_KEY` / `ARK_MODEL`），**已被本目录 `.gitignore` 排除，切勿入库**。
+方舟两个接口的接入点放在 `.env`（**已被本目录 `.gitignore` 排除，切勿入库**），共用一把 `ARK_API_KEY`：
+- `ARK_MODEL`：文生图（Seedream）接入点 endpoint id，渲染 `file_1`/`file_2` 画面。
+- `ARK_LLM_MODEL`：**可选**，大模型（doubao 系列）接入点 endpoint id，用于生成案件剧本（剧情 / 动机 / 时间线 / 供词 / 逻辑链）。
+
+未配置 `ARK_LLM_MODEL` 时，自动回退到程序化模板（案件仍可跑，只是剧情与推理来自固定模板）。
 可用 `--dotenv /path/to/.env` 指向仓库外的密钥文件。
 
 ## 与主流程的对接
