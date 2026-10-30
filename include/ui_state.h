@@ -11,6 +11,8 @@
 #define UI_NICK_MAX   16
 #define UI_HASH_HEX   17  /* 前 8 字节 → 16 hex + NUL；禁止展示种子 */
 #define UI_EVENT_MAX  96
+#define UI_IMG_PATH_MAX 128  /* 证物图片路径（相对 ui_prototype/） */
+#define UI_DESC_MAX     256  /* 证物文案 */
 
 enum ui_phase {
     UI_PHASE_IDLE = 0,
@@ -42,6 +44,8 @@ struct ui_file {
     char     hash_hex[UI_HASH_HEX]; /* 整文件摘要前缀，非种子 */
     int      have;                  /* 0 缺失 1 已有；第1周多为 0 */
     char     source_nick[UI_NICK_MAX + 1];
+    char     img_path[UI_IMG_PATH_MAX]; /* 证物图片路径，供 Web 放大展示 */
+    char     desc[UI_DESC_MAX];         /* 证物文案 */
 };
 
 struct ui_state {
@@ -77,6 +81,9 @@ void ui_set_file_meta(struct ui_state *s, uint8_t file_id, uint8_t chapter,
 /* 彭/transfer 回调：更新证物已有与来源（第2周对接面） */
 int ui_set_file_status(struct ui_state *s, uint8_t file_id, int have,
                        const char *source_nick);
+/* 证物图文内容：图片路径（相对 ui_prototype/）与文案；传 NULL 表示不覆盖 */
+void ui_set_file_content(struct ui_state *s, uint8_t file_id,
+                         const char *img_path, const char *desc);
 void ui_advance_phase(struct ui_state *s, enum ui_phase phase);
 
 const char *ui_path_label(int path_type);
@@ -84,5 +91,8 @@ const char *ui_phase_label(enum ui_phase p);
 
 /* 终端案情板；不打印种子或 seed_hash 原文 */
 void ui_term_draw(const struct ui_state *s);
+
+/* 把 ui_state 序列化成 JSON 落盘（供 Web 案情板轮询），临时文件 + rename 原子替换 */
+void ui_state_write_json(const struct ui_state *s, const char *path);
 
 #endif

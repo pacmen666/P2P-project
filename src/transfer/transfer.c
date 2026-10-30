@@ -192,7 +192,12 @@ int tr_manifest(struct transfer *t,const unsigned char *b,size_t n) {
     for(int f=0;f<3;f++) {
         struct gen_file *g=&t->manifest.files[f];t->data[f]=calloc(1,g->file_size);if(!t->data[f])return -1;
         ui_state_lock(t->ui);ui_apply_manifest_header(t->ui,t->manifest.session_id,NULL);
-        ui_set_file_meta(t->ui,g->file_id,g->chapter,g->kind,g->file_size,g->file_hash);ui_state_unlock(t->ui);
+        ui_set_file_meta(t->ui,g->file_id,g->chapter,g->kind,g->file_size,g->file_hash);
+        /* 证物真实文件路径（相对项目根，供 Web 拉取）；文案由文证物文件内容提供 */
+        char web_path[UI_IMG_PATH_MAX];
+        snprintf(web_path,sizeof(web_path),"session_%08x/file_%u",t->manifest.session_id,g->file_id);
+        ui_set_file_content(t->ui,g->file_id,web_path,NULL);
+        ui_state_unlock(t->ui);
         for(unsigned k=0;k<g->piece_count;k++) {
             unsigned char piece[GEN_PIECE];size_t got;
             if(gen_read_piece(&t->manifest,g->file_id,(uint16_t)k,piece,&got)==0 && hash_ok(piece,got,g->pieces[k].hash)) {

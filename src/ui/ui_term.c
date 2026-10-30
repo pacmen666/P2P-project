@@ -1,6 +1,7 @@
 #include "ui_state.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <arpa/inet.h>
 
 static void ip_str(uint32_t ip_n, char *buf, size_t n)
@@ -78,4 +79,12 @@ void ui_term_draw(const struct ui_state *s)
 #endif
     printf("============================================\n");
     fflush(stdout);
+
+    /* 同步一份 JSON 给 Web 案情板；client / client_transfer 都走这里。路径可用 UI_JSON_PATH 覆盖。 */
+    {
+        const char *path = getenv("UI_JSON_PATH");
+        if (!path || !path[0])
+            path = "logs/ui_state.json";
+        ui_state_write_json(s, path);
+    }
 }
