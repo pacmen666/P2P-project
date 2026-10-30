@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>碎片档案 · P2P 协作解谜</title>
+  <link rel="preconnect" href="https://fonts.googleapis.cn">
+  <link rel="stylesheet" href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Special+Elite&family=Ma+Shan+Zheng&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- 顶栏 -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">◈</span>
+        <div class="brand-text">
+          <h1>碎片档案</h1>
+          <p class="subtitle">P2P 协作解谜 · 网页案情板</p>
+        </div>
+      </div>
+      <div class="top-right">
+        <div class="meta-item" id="meta-session" hidden>
+          <span class="label">局号</span><span class="badge" id="badge-session">—</span>
+        </div>
+        <div class="meta-item" id="meta-phase" hidden>
+          <span class="label">阶段</span><span class="badge" id="badge-phase">—</span>
+        </div>
+        <button class="icon-btn" id="btn-settings" title="设置">⚙</button>
+      </div>
+    </header>
+
+    <main id="view">
+
+      <!-- ============ 大厅（斜视桌面） ============ -->
+      <section class="view lobby-view" id="view-lobby">
+        <div class="bridge-note" id="bridge-note" hidden></div>
+
+        <!-- 3D 桌面舞台：perspective 只作用于此，克隆展平后放大镜仍可正确对齐 -->
+        <div class="desk-stage" data-ev="侦探办公桌" data-evno="DESK" data-evmeta="俯身在案前，灯下散落着案卷、报到卡与证物碎片">
+          <div class="desk-plane">
+
+            <!-- 深色皮桌垫 -->
+            <div class="leather-mat" data-ev="磨旧的皮质桌垫" data-evno="MAT" data-evmeta="灯油味与旧皮革，无数案件在这垫子上告破"></div>
+
+            <!-- 房主案卷夹 -->
+            <article class="paper paper--form folder" data-ev="房主案卷夹" data-evno="FILE · HOST" data-evmeta="选定案件并进房，由你分发证物清单">
+              <span class="folder-tab"></span>
+              <span class="corner-pin"></span>
+              <div class="paper-head">
+                <h3>开一局 · 我是房主</h3>
+                <p class="panel-desc">选定案件并进房，证物清单由你（C 核心）分发给队友。</p>
+              </div>
+              <div class="paper-body">
+                <div class="field">
+                  <label>昵称</label>
+                  <input id="host-nick" class="input" maxlength="16" placeholder="你的昵称">
+                </div>
+                <div class="field">
+                  <label>案件来源</label>
+                  <div class="seg" id="case-source">
+                    <button class="seg-btn active" data-src="auto">现场生成新案</button>
+                    <button class="seg-btn" data-src="pick">从历史案卷选</button>
+                  </div>
+                </div>
+                <div class="field" id="case-pick-wrap" hidden>
+                  <label>选择案件</label>
+                  <select id="case-pick" class="input"></select>
+                </div>
+                <div class="field">
+                  <label>连接方式</label>
+                  <select id="host-mode" class="input">
+                    <option value="">自动（默认）</option>
+                    <option value="tcp">TCP 直连</option>
+                    <option value="udp">UDP 打洞</option>
+                    <option value="relay">中继</option>
+                  </select>
+                </div>
+                <button class="btn primary big" id="btn-host-join" data-ev="盖印 · 房主进房" data-evno="ACTION" data-evmeta="压上火漆，作为房主开启一局">进房（房主）</button>
+              </div>
+              <span class="fold dog-ear"></span>
+              <span class="fold spine"></span>
+            </article>
+
+            <!-- 侦探报到卡 -->
+            <article class="paper paper--form slip-card" data-ev="侦探报到卡" data-evno="FILE · GUEST" data-evmeta="填写房主主机地址，进房拉取证物">
+              <span class="corner-clip"></span>
+              <div class="paper-head">
+                <h3>加入 · 我是侦探</h3>
+                <p class="panel-desc">输入房主的主机地址进房，证物通过 P2P 从房主处拉取。</p>
+              </div>
+              <div class="paper-body">
+                <div class="field">
+                  <label>昵称</label>
+                  <input id="player-nick" class="input" maxlength="16" placeholder="你的昵称">
+                </div>
+                <div class="field">
+                  <label>房主主机</label>
+                  <input id="player-host" class="input" placeholder="localhost 或房主 IP">
+                </div>
+                <div class="field">
+                  <label>连接方式</label>
+                  <select id="player-mode" class="input">
+                    <option value="">自动（默认）</option>
+                    <option value="tcp">TCP 直连</option>
+                    <option value="udp">UDP 打洞</option>
+                    <option value="relay">中继</option>
+                  </select>
+                </div>
+                <button class="btn primary big" id="btn-player-join" data-ev="报到 · 侦探进房" data-evno="ACTION" data-evmeta="连接房主主机，P2P 拉取你的证物">进房（侦探）</button>
+              </div>
+              <span class="fold dog-ear"></span>
+            </article>
+
+            <!-- 正中标题卡 -->
+            <article class="paper paper--form title-card" data-ev="碎片档案标题卡" data-evno="TITLE" data-evmeta="三枚碎片合而为一，方能开启案卷">
+              <span class="tc-glyph">◈</span>
+              <h3 class="tc-title">碎片档案</h3>
+              <p class="tc-sub">P2P 协作解谜 · 网页案情板</p>
+            </article>
+
+            <!-- 历史案卷（牛皮纸卷宗） -->
+            <article class="paper paper--form archive-folder" data-ev="历史案卷柜" data-evno="ARCHIVE" data-evmeta="已生成与已侦破案件，本地读取无需联网">
+              <span class="corner-wax"></span>
+              <div class="paper-head">
+                <h3>历史案卷</h3>
+                <p class="panel-desc">回看已生成与已侦破的案件（本地读取，无网络依赖）。</p>
+              </div>
+              <div class="paper-body">
+                <button class="btn big" id="btn-history" data-ev="翻阅历史案卷" data-evno="ACTION" data-evmeta="打开本地案件卷宗列表">查看案卷</button>
+              </div>
+              <span class="fold dog-ear"></span>
+            </article>
+
+            <!-- 散落装饰：钥匙 / 回形针 -->
+            <div class="desk-loose loose-key" data-ev="铜钥匙" data-evno="PROP" data-evmeta="一把旧铜钥匙，齿痕磨得发亮"></div>
+            <div class="desk-loose loose-clip" data-ev="回形针" data-evno="PROP" data-evmeta="压在卷宗一角的回形针"></div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 游戏（软木板 + 侧栏） ============ -->
+      <section class="view" id="view-game" hidden>
+        <div class="conn-bar" id="conn-bar">
+          <span class="conn-item"><span class="dot" id="conn-dot"></span><span id="conn-phase">—</span></span>
+          <span class="conn-item">路径 <b id="conn-path">—</b></span>
+          <span class="conn-item">局号 <b id="conn-session">—</b></span>
+          <span class="conn-item">房间 <b id="conn-room">—</b></span>
+          <span class="conn-item status" id="conn-status">—</span>
+        </div>
+        <div class="game-layout">
+          <section class="board-wrap" data-ev="案件软木板" data-evno="BOARD" data-evmeta="证物钉于板上，缺失的碎片需向队友索取">
+            <div class="board-title">
+              <h2 id="game-title">案件</h2>
+              <span class="hint">点击已有证物查看；缺失证物点「下载证物」经 P2P 拉取</span>
+            </div>
+            <div class="board" id="board"></div>
+          </section>
+          <aside class="sidebar">
+            <section class="panel" data-ev="探员名单" data-evno="MEMBERS" data-evmeta="当前在房侦探及其连接地址">
+              <span class="corner-pin dark"></span>
+              <h2>成员</h2>
+              <ul id="members" class="members"></ul>
+            </section>
+            <section class="panel" data-ev="事件记录纸条" data-evno="LOG" data-evmeta="P2P 传输与案件进程实时记录">
+              <span class="corner-pin dark"></span>
+              <h2>最近事件</h2>
+              <ul id="events" class="events"></ul>
+            </section>
+          </aside>
+        </div>
+        <footer class="actions" id="actions"></footer>
+      </section>
+
+      <!-- ============ 历史案卷 ============ -->
+      <section class="view" id="view-history" hidden>
+        <div class="history-head">
+          <h2>历史案卷</h2>
+          <button class="btn" id="btn-history-back">返回大厅</button>
+        </div>
+        <div class="history-grid" id="history-list"></div>
+      </section>
+
+      <!-- ============ 设置 ============ -->
+      <section class="view" id="view-settings" hidden>
+        <div class="settings-panel">
+          <h2>设置</h2>
+          <div class="field">
+            <label>昵称</label>
+            <input id="set-nick" class="input" maxlength="16" placeholder="你的昵称">
+          </div>
+          <div class="field">
+            <label>主题色</label>
+            <div class="colors" id="set-colors"></div>
+          </div>
+          <div class="field">
+            <label class="check-line"><input type="checkbox" id="set-sound"> 音效提示</label>
+          </div>
+          <button class="btn primary big" id="btn-settings-save">保存并返回</button>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ============ 证物放大灯箱 ============ -->
+    <div class="lightbox" id="lightbox" hidden>
+      <div class="lightbox-backdrop"></div>
+      <figure class="evidence-stage">
+        <button class="lb-close" id="lb-close" aria-label="关闭">✕</button>
+        <div class="lb-img" id="lb-img">📄</div>
+        <figcaption class="lb-caption">
+          <div class="lb-title" id="lb-title">证物</div>
+          <div class="lb-sub" id="lb-sub">图 · 章1</div>
+          <p class="lb-desc" id="lb-desc"></p>
+        </figcaption>
+      </figure>
+    </div>
+
+    <!-- ============ 三项择一弹窗 ============ -->
+    <div class="modal" id="choice-modal" hidden>
+      <div class="modal-backdrop"></div>
+      <div class="modal-box">
+        <h3>三项择一</h3>
+        <p class="modal-sub">综合所有证据，你认为真凶是谁？</p>
+        <div class="suspects" id="suspect-btns"></div>
+        <button class="btn" id="btn-choice-cancel">再想想</button>
+      </div>
+    </div>
+
+    <!-- ============ 章间问答弹窗 ============ -->
+    <div class="modal" id="quiz-modal" hidden>
+      <div class="modal-backdrop"></div>
+      <div class="modal-box">
+        <h3>章间问答</h3>
+        <p class="modal-sub">根据第一章证物回答（提交后进入第二章）</p>
+        <input id="quiz-answer" class="input" maxlength="64" placeholder="你的回答">
+        <button class="btn primary" id="btn-quiz-submit">提交问答</button>
+        <button class="btn" id="btn-quiz-cancel">再想想</button>
+      </div>
+    </div>
+
+    <!-- ============ 结算弹窗 ============ -->
+    <div class="modal" id="result-modal" hidden>
+      <div class="modal-backdrop"></div>
+      <div class="modal-box">
+        <h3 id="result-title">真相揭晓</h3>
+        <div id="result-body"></div>
+        <button class="btn primary" id="btn-result-ok">返回大厅</button>
+      </div>
+    </div>
+
+  </div>
+  <script src="app.js"></script>
+  <script src="magnifier.js"></script>
+</body>
+</html>
