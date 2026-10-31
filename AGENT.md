@@ -7,7 +7,8 @@
 1. 本文件  
 2. `docs/碎片档案_v1格式约定.md`  
 3. `docs/碎片档案_项目方案.md` 第 4、6、8 节  
-4. 将要改的那个子目录里的 `README.md`
+4. `docs/README.md`（文档地图）  
+5. 将要改的那个子目录里的 `README.md`
 
 字段宽度、端口、指令码、错误码以约定为准。约定与实现冲突时，**改代码去符合约定**，不得擅自改约定（除非任务明确要求升 `ver`）。
 
@@ -41,8 +42,9 @@
 
 ## 本机开发与文档
 
-- Windows 开发机：默认 **WSL2 + Ubuntu**，路径 `/mnt/d/.../Project`，`make` 构建；见 `docs/wsl.md`。  
-- 源码按 **Linux POSIX** 维护，不在此仓库做 MSYS2/原生 Windows 编译主线。
+- Windows 开发机：默认 **WSL2 + Ubuntu**，路径 `/mnt/d/.../Project`，`make` 构建；见 `docs/构建说明.md`。  
+- 源码按 **Linux POSIX** 维护，不在此仓库做 MSYS2/原生 Windows 编译主线。  
+- 文档地图：`docs/README.md`。进度状态：`docs/验收总表.md`。
 
 ## Git
 

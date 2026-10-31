@@ -21,4 +21,4 @@
 
 ## 2026-10-25 收发整合补丁
 
-正式入口仅 `relay_server`。读取和发送队列统一使用公共 `fa_stream`，保留 room=1 与名单检查；历史 `relay_forward.c` 不构建、不启动。`evidence_queued` 表示成功入队的 PIECE_DATA 数据区累计（可能含重传，非送达确认）；须由陈确认实验口径。王负责审阅维护，彭负责回归，详见 [收尾说明](../../docs/transfer_closeout.md)。
+正式入口仅 `relay_server`。读取和发送队列使用公共 `fa_stream`，保留 room=1 与名单检查。`evidence_queued` 表示成功入队的 PIECE_DATA 数据区累计（可能含重传）。说明见 [`docs/传块模块.md`](../../docs/传块模块.md)。

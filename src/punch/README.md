@@ -10,7 +10,7 @@
 
 `client` 与 `client_transfer` 共用本模块。**禁止**对该 fd 调用 `connect()`；PROBE / PUNCH / ANNOUNCE 均 `sendto`。
 
-第 3 周：同网段通告与关房晚进在 `src/ui/client_main.c` 已验收（四窗见 `docs/wsl.md`，书面 `docs/experiment7_announce.md`）。`client_transfer` 可发 `announce` 并收广播后 `tr_connect_announced`。第 4 周：完整对发认证、NAT 类型记录（`docs/punch_hosts.md`）与失败回落中继，与彭 `tr_should_punch` / `tr_accept_udp` 对接。
+同网段通告与关房晚进在 `src/ui/client_main.c` 已验收（四窗见 [`docs/构建说明.md`](../../docs/构建说明.md)，书面 [`docs/实验记录.md`](../../docs/实验记录.md) 实验 7）。`client_transfer` 可发 `announce` 并收广播后 `tr_connect_announced`。主机登记见 [`docs/主机登记.md`](../../docs/主机登记.md)。打洞与彭 `tr_should_punch` / `tr_accept_udp` 对接。
 
 ## 规则
 
@@ -18,6 +18,6 @@
 |------|------|
 | GitHub | 提交客户端源码与 README |
 | gitignore | 不忽略 |
-| 本地 | NAT 类型记在 `docs/punch_hosts.md`，勿提交家庭公网 IP |
+| 本地 | NAT 类型记在 `docs/主机登记.md`。家庭公网地址不写入仓库 |
 | 只读 | 「同一 fd、禁止另建 socket」 |
 | 可编辑 | 打洞与通告（刘主责） |

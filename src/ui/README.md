@@ -10,7 +10,7 @@
 | `ui_term.c` | 终端案情板；`./client` 与 `client_transfer` 共用 |
 | `client_main.c` | 刘侧入口 `./client`：进房、PEER_LIST、PROBE、ANNOUNCE、关房后 MANIFEST_REQ、PUNCH 骨架、`markhave` / `next` / `answer` / `choose`（`choose` 写 `logs/choice_summary.log`） |
 
-构建：仓库根 `make` 或 `make client` → `./client`（Linux / WSL）。传块联调入口是 `make transfer` → `./client_transfer`（`src/transfer/client_main.c` 复用本目录 `ui_state` / `ui_term`）。stdin 行尾经 `fa_chomp_line` 处理。说明见 `docs/week1_liu.md`、`docs/wsl.md`、`docs/experiment7_announce.md`。
+构建：仓库根 `make` 或 `make client` → `./client`。传块入口是 `make transfer` → `./client_transfer`（复用本目录 `ui_state` / `ui_term`）。stdin 行尾经 `fa_chomp_line` 处理。说明见 [`docs/界面与通告.md`](../../docs/界面与通告.md)、[`docs/构建说明.md`](../../docs/构建说明.md)、[`docs/实验记录.md`](../../docs/实验记录.md) 实验 7。
 
 ## 路径文案（约定四类）
 
