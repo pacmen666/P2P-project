@@ -3,6 +3,7 @@
 *.exe
 *.out
 a.out
+/build/
 # 仓库根上的可执行文件名（必须带 /，否则会忽略 src/tracker/）
 /tracker
 /client
