@@ -53,7 +53,7 @@ static uint16_t g_room_id = 1;
 
 static int g_udp_fd = -1;
 
-/* 第 3 周：实验 2 开关 */
+/* 实验 2：迭代接待开关 */
 static int g_iterative_mode = 0;
 
 /* ---------- 工具函数 ---------- */
@@ -522,7 +522,7 @@ static void process_client_buffer(struct client *c)
     }
 }
 
-/* ---------- 第 3 周：迭代模式 ---------- */
+/* ---------- 实验 2：迭代模式 ---------- */
 
 static void run_iterative(int listen_fd)
 {
@@ -544,7 +544,7 @@ static void run_iterative(int listen_fd)
 
 int main(int argc, char *argv[])
 {
-    /* 第 3 周：解析 --iterative */
+    /* 实验 2：解析 --iterative */
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--iterative") == 0) {
             g_iterative_mode = 1;
@@ -581,7 +581,7 @@ int main(int argc, char *argv[])
     }
     log_info("TCP 监听 0.0.0.0:%d", PORT_ROOM_TCP);
 
-    /* 第 3 周：迭代模式直接走 run_iterative */
+    /* 实验 2：迭代模式走 run_iterative */
     if (g_iterative_mode) {
         run_iterative(listen_fd);
         return 0;

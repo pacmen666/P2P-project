@@ -23,4 +23,4 @@ sleep 1
 kill -9 "$RP" 2>/dev/null || true
 grep -qE 'PROBE_ACK|PEER_LIST' logs/client.log logs/client_run.log
 grep -q '已有' logs/client_run.log
-echo 'liu_week2_smoke: OK'
+echo 'join_board_smoke: OK'

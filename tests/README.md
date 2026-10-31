@@ -8,9 +8,9 @@
 |------|------|
 | GitHub | 提交步骤 md、小型输入、脚本；不提交抓包原文件 |
 | gitignore | 无额外规则（pcap 在 `captures/` 忽略）；`logs/` 已忽略，勿提交运行日志 |
-| 本地 | 可跑实验 0–9；占位块仅实验 1 |
+| 本地 | 可跑实验 0–9 |
 | 只读 | 无 |
-| 可编辑 | 步骤与断言（模块主责人写自己的实验；刘汇总实验 4 表） |
+| 可编辑 | 步骤与断言。实验书面记录见 [`docs/实验记录.md`](../docs/实验记录.md) |
 
 每条记录：命令、操作系统与网络、预期、实际、日志/抓包**文件名**、commit。
 
@@ -26,7 +26,7 @@ make clean && make
 mkdir -p logs
 ```
 
-Windows 上请用 **WSL2**，见 [`docs/wsl.md`](../docs/wsl.md)。跑脚本前若端口占用，可先：
+Windows 上使用 WSL2，见 [`docs/构建说明.md`](../docs/构建说明.md)。跑脚本前若端口占用，可先：
 
 ```bash
 pkill -9 -f room_server 2>/dev/null
@@ -41,14 +41,14 @@ sleep 0.5
 | 顺序 | 命令 | 说明 | 通过标志 |
 |------|------|------|----------|
 | 1 | `bash tests/probe_only.sh` | 起 `room_server`，Python 发最小 PROBE，收 PROBE_ACK | 退出码 0，打印 `ACK_OK` |
-| 2 | `bash tests/liu_week2_smoke.sh` | 进房 + PROBE_ACK/PEER_LIST + `markhave` 案情板 | 打印 `liu_week2_smoke: OK` |
+| 2 | `bash tests/join_board_smoke.sh` | 进房 + PROBE_ACK/PEER_LIST + `markhave` 案情板 | 打印 `join_board_smoke: OK` |
 | 3 | `bash tests/full_liu_smoke.sh` | 管道驱动 `client`：`join` + `probe` | 查看 `logs/client.log` 含 PROBE 相关记录 |
 
 **一键三连（CI / 本地自检）：**
 
 ```bash
 cd /mnt/d/Coding_Project/CS374/Project
-bash tests/probe_only.sh && bash tests/liu_week2_smoke.sh && bash tests/full_liu_smoke.sh
+bash tests/probe_only.sh && bash tests/join_board_smoke.sh && bash tests/full_liu_smoke.sh
 ```
 
 ---
@@ -61,7 +61,7 @@ bash tests/probe_only.sh && bash tests/liu_week2_smoke.sh && bash tests/full_liu
 - **依赖**：`room_server` 监听 UDP 37402。
 - **不**构建 `client`。
 
-### `liu_week2_smoke.sh`
+### `join_board_smoke.sh`
 
 - 构建 `room_server` + `client`，管道输入：`join 侦探 localhost` → `markhave 1 测试源` → `redraw` → `quit`。
 - **断言**：`logs/client.log` 或 `logs/client_run.log` 含 `PROBE_ACK` 或 `PEER_LIST`；运行日志含「已有」。
@@ -76,10 +76,9 @@ bash tests/probe_only.sh && bash tests/liu_week2_smoke.sh && bash tests/full_liu
 - 构建 `room_server` + `make probe_client_min`，跑 C 最小探测 `tests/probe_client_min`。
 - 与 `probe_only.sh` 类似，走刘侧 punch 栈而非纯 Python 包头。
 
-### `run_liu_smoke.sh` / `smoke_week1_liu.sh` / `quick_join.sh`
+### `quick_join.sh`
 
-- 早期/调试用管道 join+probe 或 quick join；**日常以 `probe_only` + `liu_week2_smoke` + `full_liu_smoke` 为准**。
-- `quick_join.sh` 会尝试 `fuser -k` 释放 37401/37402 端口（需 `fuser` 包，可选）。
+释放 37401/37402 后做一次 `join`。需本机有 `fuser`。日常以 `probe_only` + `join_board_smoke` + `full_liu_smoke` 为准。
 
 ---
 
@@ -132,7 +131,7 @@ announce
 
 ## 关房 + 晚进通告（手工四窗，无自动化脚本）
 
-**不能**用单脚本替代：需 4 个终端，且 **D 禁止 join**。步骤见 [`docs/wsl.md`](../docs/wsl.md) 一节「关房实验：标准四窗」。
+四窗手工步骤见 [`docs/构建说明.md`](../docs/构建说明.md)「关房实验」。D 窗保持未进房。
 
 **D 验收要点（peer 0、未进房）**：`ANNOUNCE` → `通告发现：已连接 房主:<端口>` → 状态「正在索取清单」。  
 通常**无**「已从房主取得 MANIFEST」（房主无陈侧清单缓存时为预期）。
@@ -158,9 +157,7 @@ make transfer
 make test-transfer
 ```
 
-生成 `room_server`、`client_transfer`、正式 `relay_server`。手工三端见 [`docs/transfer_peng.md`](../docs/transfer_peng.md)；验证记录见 [`docs/transfer_validation.md`](../docs/transfer_validation.md)。测试会占用 37401、37402、37405，请先关掉旧 `room_server` / `client`。
-
-**中继口径**：本补丁的 `make test-transfer` 已全部使用 `relay_server`，并自动构建流测试和丢包注入库。Mac 命令、分项验证及验收边界见 [传输收尾说明](../docs/transfer_closeout.md)。
+生成 `room_server`、`client_transfer`、正式 `relay_server`。说明见 [`docs/传块模块.md`](../docs/传块模块.md)。测试占用 37401、37402、37405，先结束旧 `room_server` / `client`。`make test-transfer` 使用 `relay_server`。
 
 ## 王侧 / 全组（参考）
 
@@ -170,4 +167,4 @@ make room_server relay_server test_client
 ./test_client    # 按 tests/test_client.c 说明
 ```
 
-刘侧文档：`docs/week1_liu.md`、`docs/experiment4_sockopts.md`、`docs/wsl.md`。
+相关文档：[`docs/界面与通告.md`](../docs/界面与通告.md)、[`docs/实验记录.md`](../docs/实验记录.md)、[`docs/构建说明.md`](../docs/构建说明.md)。

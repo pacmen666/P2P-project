@@ -1,5 +1,5 @@
 /*
- * 第 1 周客户端（刘）：终端案情板 + 进房 + 单 UDP 探测/通告骨架。
+ * 终端案情板：进房、探测、通告。网络线程 select；界面经唤醒管道通知。
  * 网络线程 select；界面线程只改状态并通过唤醒管道叫醒网络线程。
  * 禁止显示种子；打洞 UDP 禁止 connect。
  */
@@ -772,7 +772,7 @@ static void *net_thread(void *arg)
             a->punch_wait_peer = 0;
             ui_state_lock(&a->ui);
             ui_set_status(&a->ui,
-                          "打洞 %us 未互达 peer=%u（第4周改中继）",
+                          "打洞 %us 未互达 peer=%u，回落中继",
                           PUNCH_TIMEOUT_SEC, peer);
             ui_push_event(&a->ui, "PUNCH 超时 peer=%u", peer);
             ui_term_draw(&a->ui);

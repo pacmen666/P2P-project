@@ -42,7 +42,7 @@ struct ui_file {
     uint8_t  kind;
     uint32_t file_size;
     char     hash_hex[UI_HASH_HEX]; /* 整文件摘要前缀，非种子 */
-    int      have;                  /* 0 缺失 1 已有；第1周多为 0 */
+    int      have;                  /* 0 缺失 1 已有 */
     char     source_nick[UI_NICK_MAX + 1];
     char     img_path[UI_IMG_PATH_MAX]; /* 证物图片路径，供 Web 放大展示 */
     char     desc[UI_DESC_MAX];         /* 证物文案 */
@@ -78,7 +78,7 @@ void ui_apply_manifest_header(struct ui_state *s, uint32_t session_id,
 void ui_set_file_meta(struct ui_state *s, uint8_t file_id, uint8_t chapter,
                       uint8_t kind, uint32_t file_size,
                       const uint8_t file_hash[32]);
-/* 彭/transfer 回调：更新证物已有与来源（第2周对接面） */
+/* 传块回调：更新证物已有与来源 */
 int ui_set_file_status(struct ui_state *s, uint8_t file_id, int have,
                        const char *source_nick);
 /* 证物图文内容：图片路径（相对 ui_prototype/）与文案；传 NULL 表示不覆盖 */

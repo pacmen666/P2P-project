@@ -1,4 +1,4 @@
-/* Reuses the original Week 1 stream regression cases with canonical include/src paths. */
+/* 报文编解码与读状态机回归（include/fa_stream.h、src/common/fa_stream.c）。 */
 #include "fa_stream.h"
 #include "common.h"
 #include <assert.h>

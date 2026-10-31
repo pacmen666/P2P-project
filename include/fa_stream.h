@@ -1,6 +1,6 @@
 #ifndef FA_STREAM_H
 #define FA_STREAM_H
-/* Week 1 POSIX transport helpers. Wire format remains protocol v1. */
+/* POSIX 收发辅助。线上格式为协议 v1。 */
 #include <stddef.h>
 #include <stdint.h>
 #define FA_HEADER 8u

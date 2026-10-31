@@ -1,7 +1,5 @@
-/* Formal relay entry (Wang), integrated with the existing fa_stream transport.
- * Keeps room=1 membership and RELAY_WRAP forwarding; shares Peng's tested
- * incremental reader / bounded nonblocking queue instead of two receive buffers.
- * The legacy relay_forward.c is retained only as a historical reference.
+/* Formal relay entry. Room=1 membership and RELAY_WRAP forwarding.
+ * Incremental reader and bounded nonblocking queue via fa_stream.
  */
 #define _POSIX_C_SOURCE 200809L
 #include "common.h"

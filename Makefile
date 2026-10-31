@@ -1,5 +1,4 @@
-# CS374 第2周 Makefile
-# 王：房间服务（tracker）、中继（relay）、公共模块、测试客户端
+# 碎片档案：房间服务、中继、客户端、传块测试
 
 CC      = gcc
 CFLAGS  = -Wall -g -Iinclude
@@ -38,13 +37,13 @@ test_client: tests/test_client.c src/common/log.c src/common/config.c include/co
 
 # 清理
 clean:
-	rm -f room_server relay_server test_client client client_transfer relay_transfer tests/udp_fault.so tests/test_transfer_stream
+	rm -f room_server relay_server test_client client client_transfer relay_transfer tests/udp_fault.so tests/test_transfer_stream tests/probe_client_min
 
 # 重新编译
 re: clean all
 
-# ---- 分块传输（彭）+ 正式中继 relay_server（王）；见 docs/transfer_closeout.md。
-# client_transfer 是陈的实验 8/9 统计口径采集入口（TRANSFER_STATS 行含 total_up/elapsed/hash_reject）。 ----
+# 分块传输 + 正式中继 relay_server。client_transfer 输出 TRANSFER_STATS。
+# 说明见 docs/传块模块.md。
 TRANSFER_OBJS = src/transfer/client_main.c src/transfer/transfer.c src/generate/generate.c \
                 src/punch/udp_sock.c src/ui/ui_state.c src/ui/ui_term.c \
                 src/common/fa_stream.c src/common/log.c
@@ -54,8 +53,12 @@ TRANSFER_HDRS = include/common.h include/fa_stream.h include/punch.h include/log
 client_transfer: $(TRANSFER_OBJS) $(TRANSFER_HDRS) Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DFA_TRANSFER_CLIENT -Isrc/generate -Isrc/transfer -pthread $(TRANSFER_OBJS) $(LDFLAGS) -lcrypto -o $@
 
-# relay_forward.c is retained as historical source; the only active relay is relay_server.
 transfer: room_server client_transfer relay_server
+
+tests/probe_client_min: tests/probe_client_min.c src/punch/udp_sock.c src/common/log.c include/common.h include/punch.h include/log.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/probe_client_min.c src/punch/udp_sock.c src/common/log.c
+
+probe_client_min: tests/probe_client_min
 
 tests/udp_fault.so: tests/udp_fault.c
 	$(CC) -Wall -Wextra $(FAULT_FLAGS) -o $@ $<
@@ -67,4 +70,4 @@ test-transfer: transfer tests/udp_fault.so tests/test_transfer_stream
 	./tests/test_transfer_stream
 	python3 -u tests/test_transfer.py
 
-.PHONY: all clean re transfer test-transfer
+.PHONY: all clean re transfer test-transfer probe_client_min
