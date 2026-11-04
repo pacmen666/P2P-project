@@ -11,6 +11,7 @@ a.out
 /relay_server
 /test_client
 logs/
+.cache/
 *.obj
 *.pdb
 *.ilk

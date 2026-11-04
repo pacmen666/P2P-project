@@ -64,7 +64,7 @@ static int members(struct client *a,const unsigned char *b,size_t len,int join){
     if(off!=len)return -1;
     if(join && (b[2]<1 || b[2]>4 || !(seen&(1u<<b[2]))))return -1;
     ui_state_lock(&a->ui);
-    if(join){a->room_id=fa_u16(b);a->ui.room_id=a->room_id;a->ui.my_peer_id=b[2];a->ui.room_online=1;if(!a->ui.session_id)a->ui.phase=UI_PHASE_IN_ROOM;}
+    if(join){a->room_id=fa_u16(b);a->ui.room_id=a->room_id;a->ui.my_peer_id=b[2];a->ui.room_online=1;if(!a->ui.session_id)a->ui.phase=UI_PHASE_IN_ROOM;ui_set_status(&a->ui,"已进房 peer=%u",a->ui.my_peer_id);}
     /* Keep cached peers for ongoing transfer; do not erase on Tracker loss. */
     for(unsigned i=0;i<count;i++)ui_set_peer(&a->ui,&list[i]);
     unsigned mine=a->ui.my_peer_id;ui_state_unlock(&a->ui);

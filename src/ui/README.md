@@ -6,7 +6,7 @@
 
 | 文件 | 作用 |
 |------|------|
-| `ui_state.c` | 局号、昵称、成员、三文件摘要前缀、已有/缺失/来源、路径类型（**无种子字段**） |
+| `ui_state.c` | 局号、昵称、成员、三文件摘要前缀、已有/缺失/来源、路径类型、**`status` 文案**（初始化「未进房」；`JOIN_OK` 后由入口设为「已进房 peer=N」）（**无种子字段**） |
 | `ui_term.c` | 终端案情板；`./client` 与 `client_transfer` 共用 |
 | `client_main.c` | 刘侧入口 `./client`：进房、PEER_LIST、PROBE、ANNOUNCE、关房后 MANIFEST_REQ、PUNCH 骨架、`markhave` / `next` / `answer` / `choose`（`choose` 写 `logs/choice_summary.log`） |
 
