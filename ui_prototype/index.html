@@ -143,6 +143,15 @@
 
       <!-- ============ 游戏（软木板 + 侧栏） ============ -->
       <section class="view" id="view-game" hidden>
+        <!-- 侦探工具栏：默认普通检视，点选工具才出现特殊显示 -->
+        <div class="tool-rail" id="tool-rail">
+          <button class="tool-btn active" data-tool="inspect" title="检视（普通光标）">🖐️</button>
+          <button class="tool-btn" data-tool="magnifier" title="放大镜：放大检视">🔍</button>
+          <button class="tool-btn" data-tool="uv" title="紫外灯：显现隐藏痕迹">🔦</button>
+          <button class="tool-btn" data-tool="scan" title="指纹刷：标记可探查物">🧤</button>
+        </div>
+        <!-- 紫外灯浮层：跟随指针，圈外压暗偏紫 -->
+        <div class="uv-overlay" id="uv-overlay" hidden></div>
         <div class="conn-bar" id="conn-bar">
           <span class="conn-item"><span class="dot" id="conn-dot"></span><span id="conn-phase">—</span></span>
           <span class="conn-item">路径 <b id="conn-path">—</b></span>
@@ -150,6 +159,14 @@
           <span class="conn-item">房间 <b id="conn-room">—</b></span>
           <span class="conn-item status" id="conn-status">—</span>
         </div>
+        <ol class="stepbar" id="stepbar">
+          <li class="step" data-p="1"><span class="step-dot"></span><span class="step-name">入房</span></li>
+          <li class="step" data-p="2"><span class="step-dot"></span><span class="step-name">第一章</span></li>
+          <li class="step" data-p="3"><span class="step-dot"></span><span class="step-name">问答</span></li>
+          <li class="step" data-p="4"><span class="step-dot"></span><span class="step-name">第二章</span></li>
+          <li class="step" data-p="5"><span class="step-dot"></span><span class="step-name">指认</span></li>
+          <li class="step" data-p="6"><span class="step-dot"></span><span class="step-name">结束</span></li>
+        </ol>
         <div class="game-layout">
           <section class="board-wrap" data-ev="案件软木板" data-evno="BOARD" data-evmeta="证物钉于板上，缺失的碎片需向队友索取">
             <div class="board-title">
@@ -254,5 +271,6 @@
   </div>
   <script src="app.js"></script>
   <script src="magnifier.js"></script>
+  <script src="tools.js"></script>
 </body>
 </html>

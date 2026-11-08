@@ -19,8 +19,9 @@
   var rebuildTimer = null;
   var lastTarget = null;
   var noGlass = false;
-  // mode: 'lens' 完整放大镜；'tag' 仅提示浮签（大厅，无镜片、不隐藏光标）
+  // mode: 'lens' 完整放大镜；'tag' 仅提示浮签（大厅）；'off' 关闭（局内默认，不常驻）
   var mode = 'lens';
+  var lensEnabled = false;      // 局内是否由工具栏开启了放大镜
   var LOBBY_ID = 'view-lobby';
 
   function activeView() {
@@ -28,22 +29,48 @@
     return v ? v.id : null;
   }
 
-  /* 切换模式：大厅只用提示板；其它视图保留完整放大镜 */
-  function applyMode() {
-    var want = activeView() === LOBBY_ID ? 'tag' : 'lens';
+  function hideLens() {
+    mag.classList.remove('is-show', 'is-hot', 'is-field');
+    document.body.classList.remove('mag-on');
+    noGlass = false;
+    if (clone) { clone.parentNode.removeChild(clone); clone = null; }
+    clearLit();
+  }
+
+  /* 统一切换模式：tag=大厅提示板；lens=完整放大镜；off=局内关闭（默认，不常驻） */
+  function setMode(want) {
     if (want === mode) return;
     mode = want;
-    if (mode === 'tag') {
-      mag.classList.add('is-tag-only');
-      mag.classList.remove('is-show');
-      document.body.classList.remove('mag-on');
-      if (clone) { clone.parentNode.removeChild(clone); clone = null; }
-    } else {
+    if (want === 'lens') {
       mag.classList.remove('is-tag-only');
       rebuildClone();
-      if (pointer.inside && !noGlass) document.body.classList.add('mag-on');
+      if (pointer.inside) {
+        mag.classList.add('is-show');
+        document.body.classList.add('mag-on');
+      }
+    } else {
+      hideLens();
+      if (want === 'tag') {
+        mag.classList.add('is-tag-only');
+      } else {
+        mag.classList.remove('is-tag-only');
+      }
     }
   }
+
+  /* 视图变化：大厅→提示板；局内→默认关闭，是否启用放大镜由工具栏决定 */
+  function applyMode() {
+    if (activeView() === LOBBY_ID) { setMode('tag'); return; }
+    setMode(lensEnabled ? 'lens' : 'off');
+  }
+
+  /* 工具栏调用：开启/关闭放大镜镜片；返回是否已开启 */
+  function setEnabled(on) {
+    lensEnabled = !!on;
+    if (activeView() !== LOBBY_ID) setMode(lensEnabled ? 'lens' : 'off');
+    return lensEnabled;
+  }
+  function isEnabled() { return lensEnabled; }
 
   /* ---------- 构建放大镜 DOM ---------- */
   function buildMag() {
@@ -161,6 +188,7 @@
   }
 
   function probe() {
+    if (mode === 'off') { clearLit(); return; }
     var el = document.elementFromPoint(pointer.x, pointer.y);
 
     // 输入框 / 下拉：让开放大镜、恢复光标（仅 lens 模式需要隐藏镜片）
@@ -292,6 +320,8 @@
       updateClone();
     });
   }
+
+  window.Magnifier = { setEnabled: setEnabled, isEnabled: isEnabled };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

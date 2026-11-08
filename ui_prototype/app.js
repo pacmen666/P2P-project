@@ -20,6 +20,7 @@ const S = {
   state: null,
   prevPhase: null,
   pollTimer: null,
+  downloadPaused: false,
 };
 
 // ---------------- 工具 ----------------
@@ -255,7 +256,7 @@ async function leaveGame() {
     api(`/api/bridge/${S.bridge}/quit`, { method: 'POST' }).catch(() => {});
   }
   stopPolling();
-  S.bridge = ''; S.role = ''; S.state = null; S.prevPhase = null; S.running = false;
+  S.bridge = ''; S.role = ''; S.state = null; S.prevPhase = null; S.running = false; S.downloadPaused = false;
   sessionStorage.removeItem('fa.bridge');
   sessionStorage.removeItem('fa.role');
   showView('lobby');
@@ -273,12 +274,21 @@ function renderConnBar() {
   $('conn-status').textContent = st?.status || (S.running ? '正在连接房间…' : '连接已断开');
 }
 
+function renderStepbar(phase) {
+  document.querySelectorAll('#stepbar .step').forEach((el) => {
+    const p = Number(el.dataset.p);
+    el.classList.toggle('done', phase >= p);
+    el.classList.toggle('current', phase === p);
+  });
+}
+
 function renderGame() {
   if (!S.bridge) return;
   syncMeta();
   renderConnBar();
   const st = S.state;
   const phase = st?.phase ?? 0;
+  renderStepbar(phase);
 
   // 案件标题：优先从案件库匹配 session
   const sidHex = sessionHex();
@@ -406,7 +416,13 @@ function renderActions(st, phase, c) {
   }
 
   // phase 0/1/2/4
-  const getBtn = (phase >= 1) ? '<button class="btn" id="btn-get">📥 下载证物</button>' : '';
+  const inRoom = phase >= 1;
+  const getBtn = inRoom ? '<button class="btn" id="btn-get">📥 下载证物</button>' : '';
+  const pauseBtn = inRoom
+    ? `<button class="btn" id="btn-pause">${S.downloadPaused ? '▶️ 继续下载' : '⏸ 暂停下载'}</button>` : '';
+  const probeBtn = inRoom ? '<button class="btn" id="btn-probe">📡 重新探测</button>' : '';
+  const announceBtn = (inRoom && S.role === 'host')
+    ? '<button class="btn" id="btn-announce">📢 关房通告</button>' : '';
   const nextBtn = (phase === 2 || phase === 4) ? '<button class="btn primary" id="btn-next">推进阶段</button>' : '';
   const label = phase === 0 ? '正在连接房间…'
     : phase === 1 ? '已入房 · 等待证物清单'
@@ -415,11 +431,36 @@ function renderActions(st, phase, c) {
   wrap.innerHTML = `
     <span class="conn"><span class="dot ${S.running ? 'on' : 'off'}"></span>${label}</span>
     <span class="spacer"></span>
-    ${getBtn}${nextBtn}${leave}`;
+    ${probeBtn}${announceBtn}${pauseBtn}${getBtn}${nextBtn}${leave}`;
   const g = $('btn-get');
   if (g) g.addEventListener('click', async () => {
     toast('已发送下载请求（C 核心 P2P 拉取中）…');
+    S.downloadPaused = false;
     await sendCmd('get');
+    renderActions(st, phase, c);
+  });
+  const ps = $('btn-pause');
+  if (ps) ps.addEventListener('click', async () => {
+    if (S.downloadPaused) {
+      S.downloadPaused = false;
+      toast('继续下载…');
+      await sendCmd('get');
+    } else {
+      S.downloadPaused = true;
+      toast('已暂停下载');
+      await sendCmd('pause');
+    }
+    renderActions(st, phase, c);
+  });
+  const pb = $('btn-probe');
+  if (pb) pb.addEventListener('click', async () => {
+    toast('已发送 PROBE，重新登记反射并更新路径…');
+    await sendCmd('probe');
+  });
+  const an = $('btn-announce');
+  if (an) an.addEventListener('click', async () => {
+    toast('已广播关房 ANNOUNCE，未进房玩家可据此索取清单');
+    await sendCmd('announce');
   });
   const n = $('btn-next');
   if (n) n.addEventListener('click', async () => { await sendCmd('next'); });
