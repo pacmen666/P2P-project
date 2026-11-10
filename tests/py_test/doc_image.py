@@ -27,7 +27,32 @@ from PIL import Image, ImageDraw, ImageFont
 from seed_image import PRNG
 
 PIECE = 16384
-FONT_PATH = "C:/Windows/Fonts/msyh.ttc"
+
+
+def _resolve_font():
+    """跨平台找一款可用的中文字体。脚本在 WSL(Linux) 里运行时，
+    Windows 的 C:/... 盘符路径无效，需用 /mnt/c/Windows/Fonts 挂载路径。"""
+    candidates = [
+        "/mnt/c/Windows/Fonts/msyh.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "C:/Windows/Fonts/msyh.ttc",
+        "msyh.ttc", "simsun.ttc", "simhei.ttf",
+    ]
+    for p in candidates:
+        try:
+            ImageFont.truetype(p, 16)
+            return p
+        except Exception:
+            continue
+    return None
+
+
+FONT_PATH = _resolve_font()
+
+_FONT_CACHE = {}
 
 ROOMS = ["书房", "卧室", "花房", "厨房", "门厅", "阁楼"]
 FURNITURE = ["书桌", "书架", "躺椅", "茶几", "木柜", "屏风", "落地钟"]
@@ -38,8 +63,17 @@ def clamp(v):
     return 0 if v < 0 else (255 if v > 255 else v)
 
 
+def _load(size):
+    if size not in _FONT_CACHE:
+        if FONT_PATH:
+            _FONT_CACHE[size] = ImageFont.truetype(FONT_PATH, size)
+        else:
+            _FONT_CACHE[size] = ImageFont.load_default()
+    return _FONT_CACHE[size]
+
+
 def fonts():
-    return (ImageFont.truetype(FONT_PATH, 22), ImageFont.truetype(FONT_PATH, 15))
+    return (_load(22), _load(15))
 
 
 # ---------- 做旧纸张 ----------
