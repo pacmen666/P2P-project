@@ -35,14 +35,18 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Python 原型产物（tests/py_test）
+# Python 产物
 __pycache__/
 *.py[cod]
+
+# AI 案卷生成：密钥文件绝不入库（仅 .env.example 入库）
+.env
+src/ai_gen/.env
 tests/py_test/demo_out/
 tests/py_test/*.log
 tests/py_test/*.err
 
-# 素材压缩工具的导出目录（零件本身在 parts_export/，需提交）
+# 素材压缩工具在测试目录内的中间导出（正式零件在 assets/parts/，需提交）
 tests/py_test/parts/
 /tests/probe_client_min
 

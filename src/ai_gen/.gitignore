@@ -1,0 +1,8 @@
+# 密钥（方舟 API Key）禁止入库
+.env
+
+# 运行产物
+session_*/
+demo_out/
+__pycache__/
+*.pyc
