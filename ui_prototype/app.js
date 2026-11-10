@@ -672,7 +672,11 @@ $('suspect-btns').addEventListener('click', async (e) => {
   if (!name) return;
   $('choice-modal').hidden = true;
   const ok = await sendCmd('choose ' + name);
-  if (ok) { toast('已提交：' + name); beep(); }
+  if (ok) {
+    await pollNow();   // 立即拉取判定：正确→显示真凶 / 错误→停留并提示可重新指认
+    if (S.state?.choice_correct === 1) { toast('指认成功：' + name); beep(); }
+    else { toast('指认有误，可重新选择', true); }
+  }
 });
 
 // ---------------- 章间问答 ----------------

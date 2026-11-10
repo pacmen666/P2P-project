@@ -291,15 +291,16 @@ static void command(struct client *a,const char *line){
             ok=!strcmp(pick,tr2);
         }
         choice_log_append(a->ui.my_nick[0]?a->ui.my_nick:a->nick,opt);
-        ui_set_choice_result(&a->ui,ok,tname);
         if(ok){
-            /* 指认正确：停在 CHOICE，显示真凶与成功提示，玩家点“离开”才退出房间 */
+            /* 指认正确：记录真凶，停在 CHOICE 显示成功，玩家点“离开”才退出房间 */
+            ui_set_choice_result(&a->ui,1,tname);
             ui_set_status(&a->ui,"指认正确，点击“离开”退出房间");
             ui_push_event(&a->ui,"指认正确，可离开房间");
         }else{
-            /* 指认错误：进入 DONE 结算，揭晓真凶 */
-            ui_advance_phase(&a->ui,UI_PHASE_DONE);
-            ui_push_event(&a->ui,"指认有误，本局结束");
+            /* 指认错误：停在 CHOICE，不揭晓真凶（truth_name 保持空），允许再次指认 */
+            ui_set_choice_result(&a->ui,0,NULL);
+            ui_set_status(&a->ui,"指认有误，再核对一下线索，可重新指认");
+            ui_push_event(&a->ui,"指认有误，可重新选择嫌疑人");
         }
     }
     else if(!strcmp(line,"redraw")){}else ui_set_status(&a->ui,"命令：get / pause / stats / next / answer / choose / quit");
