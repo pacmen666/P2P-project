@@ -5,9 +5,11 @@
   --online:#7d8c52; --shadow:0 22px 44px -20px rgba(0,0,0,.7);
   --noise:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
   --fiber:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.03 0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='260' height='260' filter='url(%23f)' opacity='.5'/%3E%3C/svg%3E");
-  --font-display:"Noto Serif SC",serif;
-  --font-type:"Special Elite","Noto Serif SC",serif;
-  --font-hand:"Ma Shan Zheng",cursive;
+  /* 全部使用系统内置字体，不依赖任何网络字体/外部 CDN：
+     衬线（标题/正文）、等宽打字机（标签/卷宗号）、手写（等待批注） */
+  --font-display:"Songti SC","SimSun","Noto Serif CJK SC","Source Han Serif SC",serif;
+  --font-type:ui-monospace,"Cascadia Mono","Consolas","Courier New","SimSun",monospace;
+  --font-hand:"Kaiti SC","KaiTi","STKaiti","SimSun",cursive;
   /* 第一人称木桌背景（放大镜克隆复用同一份，保证纹理对齐） */
   --desk-bg:
     radial-gradient(680px 500px at 20% -10%, rgba(255,219,156,.30), transparent 62%),
@@ -115,7 +117,7 @@ body.mag-on, body.mag-on a, body.mag-on button { cursor:none !important; }
 /* ---------- 纸质物件通用 ---------- */
 .paper { position:absolute; transform-style:preserve-3d; color:var(--ink);
   transform:rotateZ(var(--rz,0deg)) translateY(var(--drop,0px)) translateZ(var(--tz,6px));
-  transition:transform .32s cubic-bezier(.22,.8,.3,1), box-shadow .32s ease; }
+  transition:transform .32s cubic-bezier(.22,.8,.3,1), box-shadow .32s ease, filter .32s ease; }
 .paper::after { content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
   background-image:var(--fiber),var(--noise); background-size:260px 260px,180px 180px;
   opacity:.36; mix-blend-mode:multiply; }
@@ -132,11 +134,19 @@ body.mag-on, body.mag-on a, body.mag-on button { cursor:none !important; }
 .paper--form .paper-head h3 { font-size:17px; }
 .paper--form .panel-desc { font-size:12px; }
 .paper--form .paper-body { padding:8px 20px 18px; display:flex; flex-direction:column; gap:11px; position:relative; z-index:2; }
-.paper--form:hover,
+/* hover / focus 都不再做 3D 翻转：rotateX/translateZ 会改变屏幕投影包围盒，
+   鼠标停边缘时会反复触发 hover→投影移动→失焦→翻回 的抽动。
+   改为始终贴桌（transform 不变），只用阴影/亮度作“拿起”反馈。 */
+.paper--form:hover {
+  filter:brightness(1.04);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.42),
+    0 40px 60px -24px rgba(0,0,0,.82), 0 12px 22px -12px rgba(0,0,0,.6);
+}
 .paper--form:focus-within {
-  transform:rotateX(-22deg) rotateZ(var(--rz,0deg)) translateY(-22px) translateZ(70px);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.34),
-    0 56px 90px -28px rgba(0,0,0,.85), 0 18px 34px -14px rgba(0,0,0,.6); z-index:30; }
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.5),
+    0 44px 66px -24px rgba(0,0,0,.85), 0 14px 24px -12px rgba(0,0,0,.62);
+  z-index:30;
+}
 
 /* 案卷夹（房主）：更宽、牛皮纸，带 tab 与折痕 */
 .folder { --rz:-3.2deg; left:3%; top:12%; width:330px;
@@ -155,8 +165,9 @@ body.mag-on, body.mag-on a, body.mag-on button { cursor:none !important; }
   transform:translateX(-50%) rotateZ(1.4deg) translateZ(8px);
   background-image:radial-gradient(130% 110% at 18% 4%,#efe6cf,#ddccaa 58%,#c4ad80); }
 .archive-folder:hover, .archive-folder:focus-within {
-  z-index:6;
-  transform:translateX(-50%) rotateX(-22deg) rotateZ(1.4deg) translateY(-22px) translateZ(70px); }
+  z-index:6; filter:brightness(1.04);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.4),
+    0 30px 44px -22px rgba(0,0,0,.7); }
 
 /* 卷角（dog-ear） */
 .dog-ear { position:absolute; right:-1px; bottom:-1px; width:24px; height:24px; border-radius:0 0 5px 0;
@@ -169,12 +180,31 @@ body.mag-on, body.mag-on a, body.mag-on button { cursor:none !important; }
   padding:30px 24px 28px;
   background-image:radial-gradient(130% 110% at 50% 0%,#f1e6c8,#ddc89c 60%,#c2a672); }
 .title-card:hover, .title-card:focus-within {
-  z-index:14;
-  transform:translate(-50%,-50%) rotateX(-22deg) rotateZ(var(--rz,-1.2deg)) translateY(-22px) translateZ(70px); }
+  z-index:14; filter:brightness(1.05);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.4),
+    0 34px 48px -22px rgba(0,0,0,.72); }
 .tc-glyph { font-size:30px; line-height:1; color:var(--wax);
   filter:drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
 .tc-title { font-size:26px; font-weight:900; letter-spacing:6px; margin:10px 0 6px; color:#3a2a17; }
 .tc-sub { font-size:11px; letter-spacing:2px; color:rgba(58,42,23,.66); }
+
+/* ---------- 大厅案板卡片“拿起正立” + 1 秒响应冷却 ----------
+   桌面整体 rotateX(22deg) 平放；悬停满 1 秒（JS 加 .lift）后，卡片保留各自的
+   居中偏移与平面微旋，再抬离桌面 translateZ(120px) 并 rotateX(-22deg) 抵消透视，
+   于是纸从平放被“拿起”、正对视线呈直立。不用 :hover 直接触发，快速划过不响应。 */
+.paper.paper--form.lift {
+  transform:
+    rotateX(-22deg)
+    translateX(var(--lift-x, 0px)) translateY(var(--lift-y, 0px))
+    rotateZ(var(--rz, 0deg)) translateZ(120px);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.42),
+    0 44px 64px -24px rgba(0,0,0,.85), 0 14px 26px -12px rgba(0,0,0,.62);
+}
+/* 历史卷宗与标题卡原本带居中偏移，lift 时需保留 */
+.archive-folder.lift { --lift-x:-50%; }
+.title-card.lift { --lift-x:-50%; --lift-y:-50%; }
+/* 响应冷却靠 JS 停留 1s；加类后的拿起动画用 .5s，干脆利落 */
+.paper.paper--form { transition: transform .5s cubic-bezier(.22,.8,.3,1), box-shadow .32s ease, filter .32s ease; }
 
 /* ---------- 桌面上的小金属件 ---------- */
 .desk-loose { position:absolute; transform-style:preserve-3d; }
@@ -191,6 +221,24 @@ body.mag-on, body.mag-on a, body.mag-on button { cursor:none !important; }
 /* ---------- 表单元素（大厅/通用） ---------- */
 .field { display:flex; flex-direction:column; gap:8px; position:relative; z-index:2; }
 .field label { font-family:var(--font-type); font-size:11px; color:var(--ink-soft); letter-spacing:2px; }
+.field-hint { font-size:12px; line-height:1.5; color:var(--wax); margin:6px 0 0; }
+.field-hint code { font-family:var(--font-type); background:rgba(141,43,31,.1); padding:1px 5px; border-radius:3px; font-size:11px; }
+
+/* 密钥设置区 */
+.key-field .key-state { font-family:var(--font-type); font-size:10px; letter-spacing:1px; margin-left:8px; padding:1px 7px; border-radius:2px; vertical-align:middle; }
+.key-state.ok { color:#3f5a24; background:rgba(125,140,82,.22); }
+.key-state.warn { color:var(--wax); background:rgba(141,43,31,.14); }
+.key-adv { margin-top:8px; }
+.key-adv summary { font-size:12px; color:var(--ink-soft); cursor:pointer; user-select:none; }
+.key-adv-input { margin-top:8px; font-size:13px; padding:9px 12px; }
+
+/* 弹窗内并排操作按钮 */
+.modal-actions { display:flex; gap:10px; margin-top:18px; }
+.modal-actions .btn { flex:1; }
+/* 案件来源选择槽：类型 / 历史案卷两个面板在同一位置叠放，切换时卡片高度不跳 */
+.pick-slot { position:relative; }
+.pick-pane { display:flex; flex-direction:column; gap:8px; }
+.pick-pane[hidden] { display:none; }
 .input { font-family:var(--font-type); font-size:15px; color:var(--ink); padding:11px 14px; border-radius:3px;
   border:1px solid rgba(70,48,22,.35); background:rgba(255,252,244,.85); width:100%; }
 .input:focus { outline:none; border-color:var(--wax); box-shadow:0 0 0 2px rgba(141,43,31,.18); }
@@ -212,6 +260,7 @@ select.input { cursor:pointer; }
 .mag-clone .desk-plane { transform:none !important; }
 .mag-clone .leather-mat { transform:none !important; }
 .mag-clone .paper { transform:rotateZ(var(--rz,0deg)) !important; }
+.mag-clone .paper.lift { transform:translateY(-10px) rotateZ(var(--rz,0deg)) !important; }
 .mag-clone .loose-key { transform:rotateZ(-28deg) !important; }
 .mag-clone .loose-clip { transform:rotateZ(-18deg) !important; }
 
@@ -292,11 +341,40 @@ select.input { cursor:pointer; }
 /* ---------- 软木板 ---------- */
 /* 木框软木板 */
 .board-wrap {
+  position:relative;
   padding:18px; border-radius:8px;
   background-image:linear-gradient(160deg,#63401f,#3d2614 55%,#241408);
   box-shadow:0 30px 58px -22px rgba(0,0,0,.88), inset 0 2px 0 rgba(255,214,160,.22);
   display:flex; flex-direction:column; gap:14px;
 }
+
+/* ---------- 全局进度遮罩（现场生成案卷 / 玩家进房等待） ---------- */
+/* display:flex 会覆盖浏览器默认 [hidden]{display:none}，须显式让 hidden 时隐藏，
+   否则打开大厅时隐藏的遮罩仍铺满全屏、拦截点击 */
+.joining[hidden] { display:none; }
+.joining {
+  position:fixed; inset:0; z-index:1000;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(20,12,5,.72); backdrop-filter:blur(3px);
+}
+.joining-card { width:340px; max-width:88%; text-align:center;
+  padding:30px 28px 26px; border-radius:10px; color:#f3e6cc;
+  background-image:linear-gradient(165deg,#2c1b0d,#1a0f06);
+  box-shadow:0 24px 60px -20px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,240,210,.12); }
+.joining-spinner { width:38px; height:38px; margin:0 auto 14px; border-radius:50%;
+  border:3px solid rgba(216,180,95,.25); border-top-color:var(--wax,#c0903a);
+  animation:joinspin .8s linear infinite; }
+@keyframes joinspin { to { transform:rotate(360deg); } }
+.joining-card h3 { margin:0 0 18px; font-size:16px; letter-spacing:2px; font-weight:800; }
+.joining-bar { height:8px; border-radius:6px; overflow:hidden;
+  background:rgba(255,255,255,.1); box-shadow:inset 0 1px 3px rgba(0,0,0,.5); }
+.joining-fill { height:100%; width:4%; border-radius:6px;
+  background:linear-gradient(90deg,#cfa24f,#f0d28a);
+  box-shadow:0 0 12px rgba(240,210,138,.6);
+  transition:width .4s cubic-bezier(.22,.8,.3,1); }
+.joining-note { margin:16px 0 0; font-size:12.5px; line-height:1.7;
+  color:rgba(243,230,204,.62); }
+
 .board-title { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 .board-title h2 { font-size:17px; font-weight:900; letter-spacing:2px; color:#f3e6cc; }
 .hint { font-size:12px; color:rgba(238,220,190,.55); }
@@ -317,8 +395,9 @@ select.input { cursor:pointer; }
 .card:nth-child(3n+1) { transform: rotate(-1.6deg); }
 .card:nth-child(3n+2) { transform: rotate(1.4deg); }
 .card:nth-child(3n+3) { transform: rotate(-0.6deg); }
-.card:hover { transform: rotate(0deg) translateY(-4px); }
-.card, .card * { transition: transform 0.5s cubic-bezier(0.4, 0.2, 0.2, 1); }
+.card:hover { filter: brightness(1.05); }
+.card { transition: filter .25s ease, box-shadow .3s ease, transform .3s ease; }
+.card * { transition: transform 0.5s cubic-bezier(0.4, 0.2, 0.2, 1); }
 
 .card-inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; }
 .card.owned .card-inner { transform: rotateY(0deg); }
@@ -459,6 +538,8 @@ select.input { cursor:pointer; }
 }
 .lb-img img { width:100%; height:100%; object-fit:contain; }
 .lb-img.has-img { background:#f7f1e5; }
+/* 文本证物（file_3）无图，整块图像区不占位，避免正文上方残留空相框 */
+.lb-img.text-only { display:none; }
 .lb-caption { text-align:center; display:flex; flex-direction:column; gap:10px; width:100%; }
 .lb-title { font-size:22px; font-weight:900; letter-spacing:2px; color:var(--ink); }
 .lb-sub { font-family:var(--font-type); font-size:13px; color:var(--wax); letter-spacing:1px; }
@@ -499,6 +580,8 @@ select.input { cursor:pointer; }
 .result-row.ok .rc { color:#4c6b2e; }
 .result-row.bad .rc { color:var(--wax); }
 .result-truth { text-align:center; font-size:19px; font-weight:900; color:var(--wax); letter-spacing:2px; }
+.result-truth.win { color:#3f7a2c; }
+.result-truth.lose { color:var(--wax); }
 
 /* ---------- 空状态 ---------- */
 .board .empty, .members li.empty { width:100%; text-align:center; color:rgba(60,40,18,.5); padding:48px 0; font-size:14px; letter-spacing:1px; }

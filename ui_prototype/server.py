@@ -27,15 +27,16 @@ import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)                      # Fragment_Archive/
-PYGEN = os.path.join(ROOT, "tests", "py_AI_gen")  # 案件生成目录
+PYGEN = os.path.join(ROOT, "src", "ai_gen")       # 案件生成脚本目录
+ENV_PATH = os.path.join(PYGEN, ".env")            # 本地密钥文件（被 .gitignore 排除，不入库）
+CASES_DIR = os.path.join(ROOT, "cases")           # 统一案件存储目录
+DL_DIR = os.path.join(ROOT, "ui_prototype")       # 玩家下载证物缓存目录（C 核心 --data-dir）
 SUSPECTS = ["赵枢", "钱映", "孙棠"]
 LOCK = threading.Lock()
 
-# 案件可落盘的位置：生成目录 + 前端数据目录
-CASE_ROOTS = [
-    PYGEN,
-    os.path.join(ROOT, "ui_prototype"),
-]
+# 可选案件类型（第一个为“随机”）。中文标签给前端选择，透传给生成脚本。
+CASE_TYPES = ["随机", "民国租界公馆", "英伦庄园", "蒸汽时代的实验室", "偏远山间别墅",
+              "南方旧宅梅雨季", "邮轮头等舱", "赛博朋克暗巷诊所", "雪山中的旅馆"]
 
 # C 核心二进制（make transfer 产物）
 CLIENT_BIN = os.path.join(ROOT, "client_transfer")
@@ -115,7 +116,8 @@ def _extract_case(sdir):
 
 
 def _find_session_dir(sid):
-    for base in CASE_ROOTS:
+    # 统一案件目录优先；其次玩家下载缓存（历史/现场预览可能尚未下载到缓存）
+    for base in (CASES_DIR, DL_DIR):
         d = os.path.join(base, "session_" + sid)
         if os.path.isdir(d) and os.path.isfile(os.path.join(d, "manifest.bin")):
             return d
@@ -123,25 +125,24 @@ def _find_session_dir(sid):
 
 
 def list_cases():
+    """只扫描统一案件目录 cases/，有内容才返回。"""
     seen = {}
-    for base in CASE_ROOTS:
-        if not os.path.isdir(base):
+    if not os.path.isdir(CASES_DIR):
+        return []
+    try:
+        names = sorted(os.listdir(CASES_DIR))
+    except OSError:
+        return []
+    for name in names:
+        if not name.startswith("session_"):
             continue
-        try:
-            names = sorted(os.listdir(base))
-        except OSError:
+        sdir = os.path.join(CASES_DIR, name)
+        c = _extract_case(sdir)
+        if not c or c["sid"] in seen:
             continue
-        for name in names:
-            if not name.startswith("session_"):
-                continue
-            sdir = os.path.join(base, name)
-            c = _extract_case(sdir)
-            if not c or c["sid"] in seen:
-                continue
-            c["mtime"] = os.path.getmtime(os.path.join(sdir, "manifest.bin"))
-            seen[c["sid"]] = c
-    out = sorted(seen.values(), key=lambda c: c["mtime"], reverse=True)
-    return out
+        c["mtime"] = os.path.getmtime(os.path.join(sdir, "manifest.bin"))
+        seen[c["sid"]] = c
+    return sorted(seen.values(), key=lambda c: c["mtime"], reverse=True)
 
 
 def _latest_sid():
@@ -150,25 +151,111 @@ def _latest_sid():
 
 
 # ---------------------------------------------------------------------------
+# 本地密钥（.env）读写：仅返回"是否已配置/是否为空"，绝不把密钥明文回传前端
+# ---------------------------------------------------------------------------
+_ENV_KEYS = ("ARK_API_KEY", "ARK_MODEL", "ARK_LLM_MODEL")
+
+
+def _read_env():
+    """读 .env 成 dict（不存在则空）。只解析 KEY=VALUE，忽略注释/空行。"""
+    vals = {}
+    if os.path.isfile(ENV_PATH):
+        with open(ENV_PATH, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                vals[k.strip()] = v.strip()
+    return vals
+
+
+def _key_status():
+    """给前端的密钥状态：只报已配置与否和掩码，不回传明文。"""
+    vals = _read_env()
+
+    def mask(v):
+        if not v:
+            return ""
+        return (v[:4] + "****" + v[-2:]) if len(v) > 8 else "****"
+
+    return {
+        "configured": any(vals.get(k) for k in _ENV_KEYS),
+        "has_api_key": bool(vals.get("ARK_API_KEY")),
+        "fields": {k: mask(vals.get(k, "")) for k in _ENV_KEYS},
+    }
+
+
+def _write_env(updates):
+    """updates: {KEY: value}。
+    约定：键不在 updates 中 → 保持原值不变；值为非空串 → 写入/覆盖；空串 → 删除该键。"""
+    vals = _read_env()
+    for k in _ENV_KEYS:
+        if k not in updates:
+            continue                              # 前端没提交该字段 → 保留现状
+        v = (updates.get(k) or "").strip()
+        if v:
+            vals[k] = v
+        else:
+            vals.pop(k, None)
+    lines = [
+        "# 方舟（Ark）云端接口凭证 —— 由网页设置写入；本文件已被 .gitignore 排除，请勿提交",
+        "# 仅配置 ARK_API_KEY 即可：出图/剧本会自动降级为程序化生成，无需填写下面两项。",
+    ]
+    for k, comment in (
+        ("ARK_API_KEY", "# 方舟 API 密钥"),
+        ("ARK_MODEL", "# 文生图接入点 endpoint id（可选）"),
+        ("ARK_LLM_MODEL", "# 大模型接入点 endpoint id（可选）"),
+    ):
+        if vals.get(k):
+            lines += [comment, f"{k}={vals[k]}"]
+    with open(ENV_PATH, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    try:
+        os.chmod(ENV_PATH, 0o600)
+    except OSError:
+        pass
+    return _key_status()
+
+
+# ---------------------------------------------------------------------------
 # 现场生成新案（本地功能，后台线程）
 # ---------------------------------------------------------------------------
 GEN_BUSY = {"busy": False}
-GEN_LAST = {"error": ""}
+GEN_LAST = {"error": "", "sid": ""}
 
 
-def _generate_async():
+def _generate_async(genre=""):
     if GEN_BUSY["busy"]:
         return False
+    genre = (genre or "").strip()
+    if genre and genre not in CASE_TYPES[1:]:
+        genre = ""
     GEN_BUSY["busy"] = True
     GEN_LAST["error"] = ""
+    GEN_LAST["sid"] = ""
 
     def work():
+        os.makedirs(CASES_DIR, exist_ok=True)
+        before = {c["sid"] for c in list_cases()}
         try:
-            subprocess.run(
-                [sys.executable, "ai_gen_case.py", "--base", PYGEN,
-                 "--dotenv", os.path.join(PYGEN, ".env")],
-                cwd=PYGEN, capture_output=True, text=True, timeout=600,
-            )
+            argv = [sys.executable, "ai_gen_case.py", "--base", CASES_DIR,
+                    "--dotenv", os.path.join(PYGEN, ".env")]
+            if genre:
+                argv += ["--genre", genre]
+            r = subprocess.run(argv, cwd=PYGEN, capture_output=True,
+                               text=True, timeout=600)
+            if r.returncode != 0:
+                detail = (r.stderr or r.stdout or "").strip().splitlines()
+                GEN_LAST["error"] = (detail[-1] if detail else
+                                     f"生成进程退出码 {r.returncode}")[:200]
+                return
+            # 成功：找出本次新增的 sid（可能不止一个目录时取最新）
+            fresh = [c for c in list_cases() if c["sid"] not in before]
+            if not fresh:
+                GEN_LAST["error"] = "生成结束但未发现新案卷（请检查磁盘/权限）"
+                return
+            GEN_LAST["sid"] = fresh[0]["sid"]
         except Exception as e:
             GEN_LAST["error"] = str(e)[:200]
         finally:
@@ -352,6 +439,21 @@ def shutdown_bridges():
         SERVICES.clear()
 
 
+def _sniff_content_type(fid, data):
+    """证物文件无扩展名，按内容魔数判断真实类型。
+    file_1/file_2 并不固定为 JPEG（实测 file_2 可能是 PNG），
+    不能凭 file_id 写死 image/jpeg。"""
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if fid in ("1", "2"):
+        return "image/jpeg"
+    return "text/plain; charset=utf-8"
+
+
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
@@ -392,8 +494,13 @@ class GameHandler(http.server.BaseHTTPRequestHandler):
             self._send(200, {"cases": list_cases()})
         elif path == "/api/suspects":
             self._send(200, {"suspects": SUSPECTS})
+        elif path == "/api/case-types":
+            self._send(200, {"types": CASE_TYPES})
         elif path == "/api/generate":
-            self._send(200, {"busy": GEN_BUSY["busy"], "error": GEN_LAST["error"]})
+            self._send(200, {"busy": GEN_BUSY["busy"], "error": GEN_LAST["error"],
+                             "sid": GEN_LAST["sid"], "has_api_key": _key_status()["has_api_key"]})
+        elif path == "/api/settings/key":
+            self._send(200, _key_status())
         elif path == "/api/bridge/capability":
             self._send(200, bridge_capability())
         elif path.startswith("/api/cases/"):
@@ -423,7 +530,7 @@ class GameHandler(http.server.BaseHTTPRequestHandler):
                     self._send(404, {"error": "not found"})
                     return
                 data = open(fpath, "rb").read()
-                ctype = "image/jpeg" if fid in ("1", "2") else "text/plain; charset=utf-8"
+                ctype = _sniff_content_type(fid, data)
                 self._send(200, raw=data, ctype=ctype)
             else:
                 self._send(400, {"error": "bad path"})
@@ -434,9 +541,20 @@ class GameHandler(http.server.BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0].rstrip("/")
         body = self._json_body()
         if path == "/api/generate":
-            ok = _generate_async()
+            ok = _generate_async(body.get("genre") or "")
             self._send(200 if ok else 409,
                        {"ok": ok, "error": GEN_LAST["error"]})
+        elif path == "/api/settings/key":
+            try:
+                updates = {}
+                for jkey, envkey in (("ark_api_key", "ARK_API_KEY"),
+                                     ("ark_model", "ARK_MODEL"),
+                                     ("ark_llm_model", "ARK_LLM_MODEL")):
+                    if jkey in body:                 # 仅当前端提交了该字段时才覆盖
+                        updates[envkey] = body[jkey]
+                self._send(200, _write_env(updates))
+            except OSError as e:
+                self._send(500, {"error": f"写入 .env 失败：{e}"})
         elif path == "/api/bridge/start":
             self._bridge_start(body)
         elif path.startswith("/api/bridge/") and path.endswith("/command"):

@@ -4,8 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>碎片档案 · P2P 协作解谜</title>
-  <link rel="preconnect" href="https://fonts.googleapis.cn">
-  <link rel="stylesheet" href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Special+Elite&family=Ma+Shan+Zheng&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -64,9 +62,16 @@
                     <button class="seg-btn" data-src="pick">从历史案卷选</button>
                   </div>
                 </div>
-                <div class="field" id="case-pick-wrap" hidden>
-                  <label>选择案件</label>
-                  <select id="case-pick" class="input"></select>
+                <div class="field pick-slot">
+                  <div class="pick-pane" id="genre-wrap">
+                    <label>喜欢的案件类型</label>
+                    <select id="case-genre" class="input"></select>
+                  </div>
+                  <div class="pick-pane" id="case-pick-wrap" hidden>
+                    <label>历史案卷</label>
+                    <select id="case-pick" class="input"></select>
+                    <p class="field-hint" id="case-pick-empty" hidden>案件文件夹里还没有案卷，先选「现场生成新案」生成一个吧。</p>
+                  </div>
                 </div>
                 <div class="field">
                   <label>连接方式</label>
@@ -215,6 +220,19 @@
           <div class="field">
             <label class="check-line"><input type="checkbox" id="set-sound"> 音效提示</label>
           </div>
+          <div class="field key-field">
+            <label>方舟 API 密钥
+              <span class="key-state" id="key-state">检测中…</span>
+            </label>
+            <input id="set-ark-key" class="input" type="password" autocomplete="off"
+                   placeholder="ark-xxxxxxxx（留空则用程序化生成，不影响游玩）">
+            <p class="field-hint">密钥仅保存在本机 <code>src/ai_gen/.env</code>，已被 git 忽略，不会上传。留空也能生成，只是出图/剧本走本地程序化模板。</p>
+            <details class="key-adv">
+              <summary>高级：接入点 endpoint id（可选）</summary>
+              <input id="set-ark-model" class="input key-adv-input" autocomplete="off" placeholder="ARK_MODEL 文生图接入点（可选）">
+              <input id="set-ark-llm" class="input key-adv-input" autocomplete="off" placeholder="ARK_LLM_MODEL 大模型接入点（可选）">
+            </details>
+          </div>
           <button class="btn primary big" id="btn-settings-save">保存并返回</button>
         </div>
       </section>
@@ -268,7 +286,31 @@
       </div>
     </div>
 
+    <!-- ============ 无密钥现场生成提示 ============ -->
+    <div class="modal" id="nokey-modal" hidden>
+      <div class="modal-backdrop"></div>
+      <div class="modal-box">
+        <h3>未配置方舟密钥</h3>
+        <p class="modal-sub">仍可继续：将用本地<b>程序化模板</b>生成案卷，流程完整、可以正常游玩，只是证物为程序绘制、剧情为固定模板。配置密钥后才会用 AI 出图和大模型剧本。</p>
+        <div class="modal-actions">
+          <button class="btn" id="btn-nokey-settings">去配置密钥</button>
+          <button class="btn primary" id="btn-nokey-continue">仍要生成</button>
+        </div>
+      </div>
+    </div>
+
   </div>
+
+  <!-- 全局进度遮罩：现场生成案卷 / 玩家进房等待清单 复用 -->
+  <div class="joining" id="joining" hidden>
+    <div class="joining-card">
+      <div class="joining-spinner"></div>
+      <h3 id="joining-title">请稍候…</h3>
+      <div class="joining-bar"><div class="joining-fill" id="joining-fill"></div></div>
+      <p class="joining-note" id="joining-note" hidden></p>
+    </div>
+  </div>
+
   <script src="app.js"></script>
   <script src="magnifier.js"></script>
   <script src="tools.js"></script>

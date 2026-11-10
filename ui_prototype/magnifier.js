@@ -254,6 +254,10 @@
   function onMove(x, y) {
     pointer.x = x;
     pointer.y = y;
+    // 局内已选“普通检视”（off）：放大镜彻底不响应任何指针动作。
+    // 否则鼠标移出视口/窗口失焦后再移回，会走下面的 re-enter 分支
+    // 误加 is-show + mag-on，表现为放大镜“自己切回来”的残影。
+    if (mode === 'off') return;
     if (!pointer.inside) {
       pointer.inside = true;
       if (mode === 'tag') {
