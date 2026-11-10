@@ -63,6 +63,12 @@ struct ui_state {
     int             event_n;
     struct ui_peer  peers[UI_MAX_PEERS];
     struct ui_file  files[UI_MAX_FILES];
+
+    /* 本机判定（方案A）。-1=本轮尚未作答，0=错，1=对。
+     * truth_name 仅在 phase==DONE 时才写入 JSON，防止提前泄题。 */
+    int             answer_correct;
+    int             choice_correct;
+    char            truth_name[UI_NICK_MAX + 1];
 };
 
 void ui_state_init(struct ui_state *s);
@@ -85,6 +91,9 @@ int ui_set_file_status(struct ui_state *s, uint8_t file_id, int have,
 void ui_set_file_content(struct ui_state *s, uint8_t file_id,
                          const char *img_path, const char *desc);
 void ui_advance_phase(struct ui_state *s, enum ui_phase phase);
+/* 记录本机判定结果；truth_name 为真凶名（可 NULL） */
+void ui_set_answer_result(struct ui_state *s, int correct);
+void ui_set_choice_result(struct ui_state *s, int correct, const char *truth_name);
 
 const char *ui_path_label(int path_type);
 const char *ui_phase_label(enum ui_phase p);

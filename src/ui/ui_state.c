@@ -12,6 +12,9 @@ void ui_state_init(struct ui_state *s)
     s->phase = UI_PHASE_IDLE;
     s->path_type = PATH_UNKNOWN;
     s->room_online = 0;
+    s->answer_correct = -1;
+    s->choice_correct = -1;
+    s->truth_name[0] = '\0';
     snprintf(s->status, sizeof(s->status), "未进房");
 }
 
@@ -134,6 +137,22 @@ void ui_advance_phase(struct ui_state *s, enum ui_phase phase)
 {
     if (phase >= UI_PHASE_IDLE && phase <= UI_PHASE_DONE)
         s->phase = phase;
+    /* 进入问答阶段时重置上一轮问答结果 */
+    if (phase == UI_PHASE_QUIZ)
+        s->answer_correct = -1;
+}
+
+void ui_set_answer_result(struct ui_state *s, int correct)
+{
+    s->answer_correct = correct ? 1 : 0;
+}
+
+void ui_set_choice_result(struct ui_state *s, int correct, const char *truth_name)
+{
+    s->choice_correct = correct ? 1 : 0;
+    if (truth_name) {
+        snprintf(s->truth_name, sizeof(s->truth_name), "%s", truth_name);
+    }
 }
 
 const char *ui_path_label(int path_type)
@@ -253,7 +272,17 @@ void ui_state_write_json(const struct ui_state *s, const char *path)
         json_str(fp, f->desc);
         fprintf(fp, "}");
     }
-    fprintf(fp, "]}\n");
+    fprintf(fp, "]");
+
+    fprintf(fp, ",\"answer_correct\":%d,\"choice_correct\":%d",
+            s->answer_correct, s->choice_correct);
+    /* 真凶名：DONE 结算时下发；指认正确并停在 CHOICE 时也下发（玩家已答对，非泄题） */
+    if (s->phase == UI_PHASE_DONE ||
+        (s->phase == UI_PHASE_CHOICE && s->choice_correct == 1)) {
+        fprintf(fp, ",\"truth_name\":");
+        json_str(fp, s->truth_name);
+    }
+    fprintf(fp, "}\n");
 
     fclose(fp);
     rename(tmp, path);

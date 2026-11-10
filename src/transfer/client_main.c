@@ -158,6 +158,89 @@ static void udp_read(struct client *a,int fd){
         }}
     }else tr_udp(a->tr,buf,(size_t)n,&src);
 }
+/* ---- 方案A：从 file_3 内存正文解析判据行，并比对玩家作答（本机判定） ---- */
+
+/* 在正文里找 "[判据] 标签：VALUE"，写入 out；未找到返回 0。
+ * 注意“[判据]”与标签之间可能有空格（生成器写的是“[判据] 问答答案：”），须跳过。 */
+static int criterion(const char *text,const char *tag,char *out,size_t cap){
+    char pat[48];
+    snprintf(pat,sizeof(pat),"[判据]%s：",tag);
+    const char *tail=pat+8;          /* 跳过 "[判据]"（UTF-8 恰为 8 字节），剩“标签：” */
+    size_t taillen=strlen(tail);
+    for(const char *base=text;(base=strstr(base,"[判据]"));base+=8){
+        const char *p=base+8;
+        while(*p==' '||*p=='\t')p++;  /* 容忍 ] 后空格 */
+        if(!strncmp(p,tail,taillen)){
+            p+=taillen;
+            size_t i=0;
+            while(p[i] && p[i]!='\n' && p[i]!='\r' && i+1<cap){out[i]=p[i];i++;}
+            out[i]='\0';
+            return i>0;
+        }
+    }
+    return 0;
+}
+/* 去所有空白 */
+static void strip_space(const char *in,char *out,size_t cap){
+    size_t j=0;
+    for(size_t i=0;in[i] && j+1<cap;i++)
+        if(!(in[i]==' '||in[i]=='\t'||in[i]=='\n'||in[i]=='\r'))out[j++]=in[i];
+    out[j]='\0';
+}
+/* 是否为纯数字 */
+static int all_digits(const char *s){if(!*s)return 0;for(;*s;s++)if(*s<'0'||*s>'9')return 0;return 1;}
+/* 时间等价：标准 HH:MM 与玩家作答（去标点后）的数字串相同。
+ * 玩家写 3 位（如 740）按前导补 0（0740）处理。 */
+static int time_match(const char *answer,const char *given){
+    /* 标准 HH:MM → 4 位数字 */
+    const char *colon=strchr(answer,':');
+    if(!colon)return 0;
+    int ah=0,amin=0;
+    for(const char *q=answer;q<colon;q++)if(*q>='0'&&*q<='9')ah=ah*10+(*q-'0');
+    for(const char *q=colon+1;*q;q++)if(*q>='0'&&*q<='9')amin=amin*10+(*q-'0');
+    char aa[8];snprintf(aa,sizeof aa,"%02d%02d",ah,amin);
+    /* 玩家作答：提取全部数字 */
+    char dg[16];size_t n=0;
+    for(size_t i=0;given[i]&&n+1<sizeof dg;i++)if(given[i]>='0'&&given[i]<='9')dg[n++]=given[i];
+    dg[n]='\0';
+    if(n!=3&&n!=4)return 0;
+    char gn[6];
+    if(n==3){gn[0]='0';memcpy(gn+1,dg,4);gn[5]='\0';}
+    else{memcpy(gn,dg,4);gn[4]='\0';}
+    return !strcmp(aa,gn);
+}
+/* 通用答案匹配 */
+static int answer_matches(const char *answer,const char *given){
+    if(!answer||!answer[0]||!given)return 0;
+    char a[64],g[64];
+    strip_space(answer,a,sizeof a);strip_space(given,g,sizeof g);
+    if(!g[0])return 0;
+    /* 标准像时间（含冒号且两侧为数字）→ 走时间等价 */
+    const char *c=strchr(a,':');
+    if(c&&c>a&&all_digits(g)&&strlen(g)>=3)return time_match(answer,given);
+    /* 去 ASCII 标点（中文标点保留其 UTF-8 字节，随正文一起比对），大小写不敏感 */
+    char aa[64],gg[64];size_t ia=0,ig=0;
+    for(size_t i=0;a[i]&&ia+1<sizeof aa;i++){
+        char ch=a[i];if(ch>='a'&&ch<='z')ch-=32;
+        if(!(ch==','||ch=='.'||ch==':'||ch==';'||ch=='!'||ch=='?'||ch=='"'||ch=='\''))aa[ia++]=ch;
+    }
+    aa[ia]='\0';
+    for(size_t i=0;g[i]&&ig+1<sizeof gg;i++){
+        char ch=g[i];if(ch>='a'&&ch<='z')ch-=32;
+        if(!(ch==','||ch=='.'||ch==':'||ch==';'||ch=='!'||ch=='?'||ch=='"'||ch=='\''))gg[ig++]=ch;
+    }
+    gg[ig]='\0';
+    return strstr(gg,aa)!=NULL;
+}
+/* 取 file_3 正文（NUL 结尾）；无则 NULL */
+static const char *case_text(struct client *a,char *buf,size_t cap){
+    const unsigned char *d=NULL;
+    size_t n=tr_file_data(a->tr,2,&d);
+    if(!n||!d||n+1>cap)return NULL;
+    memcpy(buf,d,n);buf[n]='\0';
+    return buf;
+}
+
 static void command(struct client *a,const char *line){
     printf("COMMAND %s\n",line);
     if(!strcmp(line,"quit")){atomic_store(&a->stop,1);return;}
@@ -174,14 +257,50 @@ static void command(struct client *a,const char *line){
     ui_state_lock(&a->ui);
     if(!strcmp(line,"next")){
         if(a->ui.phase==UI_PHASE_CH1 && a->ui.files[0].have && a->ui.files[1].have)ui_advance_phase(&a->ui,UI_PHASE_QUIZ);
+        else if(a->ui.phase==UI_PHASE_QUIZ && a->ui.answer_correct==1)ui_advance_phase(&a->ui,UI_PHASE_CH2);
         else if(a->ui.phase==UI_PHASE_CH2 && a->ui.files[2].have)ui_advance_phase(&a->ui,UI_PHASE_CHOICE);
         else ui_set_status(&a->ui,"本机证物未校验齐全，不能推进");
-    }else if(!strncmp(line,"answer ",7) && a->ui.phase==UI_PHASE_QUIZ)ui_advance_phase(&a->ui,UI_PHASE_CH2);
+    }else if(!strncmp(line,"answer ",7) && a->ui.phase==UI_PHASE_QUIZ){
+        if(a->ui.answer_correct==1){ui_set_status(&a->ui,"已答对，点击“进入第二章”继续");}
+        else{
+        const char *given=line+7;while(*given==' ')given++;
+        char buf[8192],want[64];
+        const char *text=case_text(a,buf,sizeof buf);
+        if(!text||!criterion(text,"问答答案",want,sizeof want)){
+            ui_set_status(&a->ui,"案卷判据缺失，无法核对（请先下完文本证物）");
+        }else if(answer_matches(want,given)){
+            ui_set_answer_result(&a->ui,1);
+            ui_set_status(&a->ui,"回答正确，点击“进入第二章”继续");
+            ui_push_event(&a->ui,"回答正确，可进入第二章");
+        }else{
+            ui_set_answer_result(&a->ui,0);
+            ui_set_status(&a->ui,"回答不符，再核对一下线索（标准答案未给出）");
+            ui_push_event(&a->ui,"回答未通过，可重新作答");
+        }
+        }
+    }
     else if(!strncmp(line,"choose ",7) && a->ui.phase==UI_PHASE_CHOICE){
         const char *opt=line+7;while(*opt==' ')opt++;
+        char buf[8192],truth[32];
+        const char *text=case_text(a,buf,sizeof buf);
+        int ok=0;const char *tname="";
+        if(text&&criterion(text,"真凶",truth,sizeof truth)){
+            tname=truth;
+            char pick[32],tr2[32];
+            strip_space(opt,pick,sizeof pick);strip_space(truth,tr2,sizeof tr2);
+            ok=!strcmp(pick,tr2);
+        }
         choice_log_append(a->ui.my_nick[0]?a->ui.my_nick:a->nick,opt);
-        ui_advance_phase(&a->ui,UI_PHASE_DONE);
-        ui_push_event(&a->ui,"选择已提交，本局结束");
+        ui_set_choice_result(&a->ui,ok,tname);
+        if(ok){
+            /* 指认正确：停在 CHOICE，显示真凶与成功提示，玩家点“离开”才退出房间 */
+            ui_set_status(&a->ui,"指认正确，点击“离开”退出房间");
+            ui_push_event(&a->ui,"指认正确，可离开房间");
+        }else{
+            /* 指认错误：进入 DONE 结算，揭晓真凶 */
+            ui_advance_phase(&a->ui,UI_PHASE_DONE);
+            ui_push_event(&a->ui,"指认有误，本局结束");
+        }
     }
     else if(!strcmp(line,"redraw")){}else ui_set_status(&a->ui,"命令：get / pause / stats / next / answer / choose / quit");
     ui_term_draw(&a->ui);ui_state_unlock(&a->ui);

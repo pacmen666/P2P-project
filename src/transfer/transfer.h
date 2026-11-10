@@ -22,6 +22,9 @@ void tr_sets(struct transfer *t, fd_set *rd, fd_set *wr, int *maxfd);
 void tr_ready(struct transfer *t, fd_set *rd, fd_set *wr);
 void tr_tick(struct transfer *t);
 void tr_summary(struct transfer *t);
+/* 取已下载文件内存缓冲（complete 后）：返回长度，未就绪返回 0。
+ * out 指向内部只读缓冲，不要释放。idx 0/1/2 对应 file_1/2/3。 */
+size_t tr_file_data(const struct transfer *t, int idx, const unsigned char **out);
 /* Whether discovery should try PUNCH; established LAN TCP always has priority. */
 int tr_should_punch(struct transfer *t, unsigned id);
 /* 关房晚进：非阻塞 TCP 连房主并排队 MANIFEST_REQ（连接 id=0） */

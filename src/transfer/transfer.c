@@ -438,6 +438,12 @@ void tr_tick(struct transfer *t){
     else if(now-t->waiting_log>5 && !(t->complete[0] && t->complete[1] && t->complete[2])){event(t,"WAITING_FOR_AVAILABLE_SOURCE",0,0);t->waiting_log=now;}
 }
 void tr_summary(struct transfer *t){unsigned long long total=t->up_tcp+t->up_udp+t->up_relay;double el=(t->dl_end>t->dl_start)?(t->dl_end-t->dl_start):-1.0;printf("TRANSFER_STATS peer=%d tcp_up=%llu udp_up=%llu relay_up=%llu total_up=%llu elapsed=%.3f hash_reject=%u",t->id,(unsigned long long)t->up_tcp,(unsigned long long)t->up_udp,(unsigned long long)t->up_relay,total,el,t->hash_reject);for(int id=1;id<=4;id++)printf(" from_%d=%llu",id,(unsigned long long)t->down[id]);puts("");}
+size_t tr_file_data(const struct transfer *t,int idx,const unsigned char **out){
+    if(out)*out=NULL;
+    if(!t||idx<0||idx>2||!t->complete[idx])return 0;
+    if(out)*out=t->data[idx];
+    return t->manifest.files[idx].file_size;
+}
 int tr_should_punch(struct transfer *t,unsigned id){if(id<1 || id>4 || id==(unsigned)t->id || !t->raw_len || t->mode==2 || t->peers[id].fallback)return 0;struct connection *c=link_for(t,(int)id);return t->mode==1 || (!c && stamp()-t->peers[id].route_since>1.5);}
 int tr_connect_announced(struct transfer *t,uint32_t ip,uint16_t port,uint32_t session){
     if(!ip || !port || !session)return -1;
